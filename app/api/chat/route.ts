@@ -2,13 +2,9 @@ import { NextResponse } from "next/server";
 
 import { DEFAULT_DOMAIN } from "@/lib/config";
 import type { Offer, OfferAllocation } from "@/lib/types";
-import { offerToPlainText } from "@/lib/utils";
 import {
-  buildGeminiPrompt,
-  buildMockPersonaMessage,
-  buildNeutralMessage,
+  buildGeminiChatPrompt,
   callGemini,
-  isLikelyTruncated,
 } from "@/lib/agent";
 
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -37,6 +33,7 @@ export async function POST(req: Request) {
       persona_tag?: string;
       current_offer?: OfferAllocation | null;
       last_human_offer?: Offer;
+      turn?: number;
       history_summary?: string;
       deadline_remaining?: number;
       chat_context?: Array<{ role: string; content: string }>;
@@ -52,34 +49,26 @@ export async function POST(req: Request) {
     }
 
     const issues = DEFAULT_DOMAIN.issues;
-    const offerAllocation = body.current_offer ?? null;
-    const offerText = offerAllocation ? offerToPlainText(offerAllocation, issues) : "";
-
-    const mockMode = process.env.NEXT_PUBLIC_MOCK_MODE === "true";
-
-    let agentMessage = "";
-    if (body.condition_id === "persona" && !mockMode) {
-      const { system, prompt } = buildGeminiPrompt({
-        personaTag: body.persona_tag,
-        offerAllocation,
-        issues,
-        humanOffer: body.last_human_offer,
-        historySummary: body.history_summary,
-        chatContext: body.chat_context,
-        deadlineRemaining: body.deadline_remaining,
-      });
-      agentMessage = (await callGemini(system, prompt)).trim();
-    } else if (body.condition_id === "persona" && mockMode) {
-      agentMessage = buildMockPersonaMessage(offerText, body.persona_tag, offerAllocation, issues);
-    } else {
-      agentMessage = buildNeutralMessage(offerText, issues, body.last_human_offer);
-    }
-
-    if (!agentMessage || isLikelyTruncated(agentMessage)) {
-      agentMessage =
-        body.condition_id === "persona"
-          ? buildMockPersonaMessage(offerText, body.persona_tag, offerAllocation, issues)
-          : buildNeutralMessage(offerText, issues, body.last_human_offer);
+    const personaTag = body.condition_id === "persona" ? body.persona_tag : "neutral";
+    const { system, prompt } = buildGeminiChatPrompt({
+      personaTag,
+      issues,
+      currentOffer: body.current_offer ?? null,
+      humanOffer: body.last_human_offer ?? null,
+      historySummary: body.history_summary,
+      chatContext: body.chat_context,
+      deadlineRemaining: body.deadline_remaining,
+      turn: body.turn,
+      maxTurns: DEFAULT_DOMAIN.max_turns,
+    });
+    const agentMessage = (
+      await callGemini(system, prompt, {
+        temperature: 0.3,
+        maxOutputTokens: 320000,
+      })
+    ).trim();
+    if (!agentMessage) {
+      throw new Error("Gemini returned an empty response.");
     }
 
     return NextResponse.json({ agent_message: agentMessage });

@@ -1,0 +1,14 @@
+{
+  "human": {
+    "snacks": 4,
+    "breaks": 1,
+    "music": 3,
+    "tickets": 2
+  },
+  "agent": {
+    "snacks": 1,
+    "breaks": 4,
+    "music": 2,
+    "tickets": 3
+  }
+}

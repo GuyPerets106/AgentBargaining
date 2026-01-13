@@ -121,11 +121,6 @@ export default function HomePage() {
             <CardDescription>Ideal for 6-minute classroom demonstrations.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {process.env.NEXT_PUBLIC_MOCK_MODE === "true" ? (
-              <div className="rounded-xl border border-dashed border-accent/40 bg-accent/10 px-3 py-2 text-xs text-accent">
-                Mock mode enabled. Gemini calls are skipped.
-              </div>
-            ) : null}
             {hasActiveSession ? (
               <div className="rounded-xl border border-dashed border-border/60 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
                 You have an active session in progress.

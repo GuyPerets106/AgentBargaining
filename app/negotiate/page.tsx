@@ -95,12 +95,14 @@ export default function NegotiatePage() {
   }, [deadlineEndsAt]);
 
   const completeSession = useCallback(
-    (reason: "agreement" | "timeout" | "turn_limit" | "abort") => {
+    (reason: "agreement" | "timeout" | "turn_limit" | "abort", agreedOffer?: Offer) => {
       if (!session) return;
-      const agreedOffer = reason === "agreement" ? currentAgentOffer : undefined;
-      const utilities = agreedOffer ? computeUtilities(agreedOffer.allocation, UTILITY_WEIGHTS) : undefined;
-      endSession({ reason, agreedOffer, utilities });
-      addEvent("end", { reason, agreed_offer: agreedOffer });
+      const finalOffer = reason === "agreement" ? agreedOffer ?? currentAgentOffer : undefined;
+      const utilities = finalOffer
+        ? computeUtilities(finalOffer.allocation, UTILITY_WEIGHTS)
+        : undefined;
+      endSession({ reason, agreedOffer: finalOffer, utilities });
+      addEvent("end", { reason, agreed_offer: finalOffer });
       if (reason === "abort") {
         router.push("/done");
       } else {
@@ -169,8 +171,21 @@ export default function NegotiatePage() {
       }
       const data = (await response.json()) as {
         agent_message: string;
-        agent_offer: Offer["allocation"];
+        agent_offer?: Offer["allocation"];
+        decision?: "accept" | "counter";
       };
+
+      if (data.decision === "accept") {
+        pushChat({ role: "agent", content: data.agent_message });
+        addEvent("chat_receive", { content: data.agent_message, turn: offer.turn });
+        addEvent("offer_accept", { offer, by: "agent" });
+        completeSession("agreement", offer);
+        return;
+      }
+
+      if (!data.agent_offer) {
+        throw new Error("Agent did not return a counteroffer.");
+      }
 
       const agentOffer: Offer = {
         turn: nextTurn + 1,
@@ -205,8 +220,8 @@ export default function NegotiatePage() {
       });
       return;
     }
-    addEvent("offer_accept", { offer: currentAgentOffer });
-    completeSession("agreement");
+    addEvent("offer_accept", { offer: currentAgentOffer, by: "human" });
+    completeSession("agreement", currentAgentOffer);
   };
 
   const handleReject = () => {
@@ -232,7 +247,8 @@ export default function NegotiatePage() {
 
     setAwaitingAgent(true);
     try {
-      const response = await fetch("/api/chat", {
+      const shouldGenerateOffer = !currentAgentOffer;
+      const response = await fetch(shouldGenerateOffer ? "/api/agent" : "/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -241,6 +257,7 @@ export default function NegotiatePage() {
           persona_tag: session.condition.persona_tag,
           current_offer: currentAgentOffer?.allocation ?? null,
           last_human_offer: lastHumanOffer ?? null,
+          turn: offers.length,
           history_summary: summarizeHistory(offers),
           deadline_remaining: deadlineRemaining,
           chat_context: [...chat, { role: "human", content: message }].slice(-4),
@@ -255,10 +272,39 @@ export default function NegotiatePage() {
             : `Chat response failed: ${response.status}`;
         throw new Error(errorMessage);
       }
-      const data = (await response.json()) as { agent_message: string };
-
-      pushChat({ role: "agent", content: data.agent_message });
-      addEvent("chat_receive", { content: data.agent_message, source: "chat" });
+      if (shouldGenerateOffer) {
+        const data = (await response.json()) as {
+          agent_message: string;
+          agent_offer?: Offer["allocation"];
+          decision?: "accept" | "counter";
+        };
+        if (data.decision === "accept") {
+          pushChat({ role: "agent", content: data.agent_message });
+          addEvent("chat_receive", { content: data.agent_message, source: "chat" });
+          if (lastHumanOffer) {
+            addEvent("offer_accept", { offer: lastHumanOffer, by: "agent" });
+            completeSession("agreement", lastHumanOffer);
+          }
+          return;
+        }
+        if (!data.agent_offer) {
+          throw new Error("Agent did not return a counteroffer.");
+        }
+        const agentOffer: Offer = {
+          turn: offers.length + 1,
+          by: "agent",
+          allocation: data.agent_offer,
+          created_at: nowIso(),
+        };
+        pushOffer(agentOffer);
+        addEvent("offer_receive", { offer: agentOffer, source: "chat" });
+        pushChat({ role: "agent", content: data.agent_message });
+        addEvent("chat_receive", { content: data.agent_message, source: "chat" });
+      } else {
+        const data = (await response.json()) as { agent_message: string };
+        pushChat({ role: "agent", content: data.agent_message });
+        addEvent("chat_receive", { content: data.agent_message, source: "chat" });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       addEvent("error", { source: "chat", message });

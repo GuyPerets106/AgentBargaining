@@ -1,4 +1,5 @@
 import type { Issue } from "@/lib/types";
+import weights from "@/lib/weights.json";
 
 export const DEFAULT_ISSUES: Issue[] = [
   { key: "snacks", label: "Snack Packs", total: 8, icon: "Cookie" },
@@ -19,22 +20,9 @@ export const DEFAULT_ISSUES: Issue[] = [
  *                      Agent gets 0 snacks, 8 breaks, 2 music, 6 tickets = 56 pts
  * Both sides gain from trading issues they value less for issues they value more!
  */
-export const UTILITY_WEIGHTS: {
+export const UTILITY_WEIGHTS = weights as {
   human: Record<string, number>;
   agent: Record<string, number>;
-} = {
-  human: {
-    snacks: 3,   // Human values snacks highly
-    breaks: 1,   // Human doesn't care much about breaks
-    music: 2,    // Neutral
-    tickets: 1,  // Human doesn't care much about tickets
-  },
-  agent: {
-    snacks: 1,   // Agent doesn't care much about snacks
-    breaks: 4,   // Agent values breaks highly
-    music: 2,    // Neutral
-    tickets: 3,  // Agent values tickets moderately
-  },
 };
 
 export const DEFAULT_DOMAIN = {

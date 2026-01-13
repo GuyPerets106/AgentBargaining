@@ -42,7 +42,7 @@ export async function POST(req: Request) {
           ],
           generationConfig: {
             temperature: body.temperature ?? 0.4,
-            maxOutputTokens: body.maxTokens ?? 120,
+            maxOutputTokens: body.maxTokens ?? 120000,
           },
         }),
       }

@@ -1,239 +1,252 @@
-import { DEFAULT_DOMAIN, UTILITY_WEIGHTS } from "@/lib/config";
+import { UTILITY_WEIGHTS } from "@/lib/config";
 import type { Issue, Offer, OfferAllocation } from "@/lib/types";
-import { offerToPlainText, summarizeOffer, computeUtilities } from "@/lib/utils";
+import { computeUtilities, offerToPlainText, summarizeOffer } from "@/lib/utils";
 
-const SYSTEM_PROMPT =
-  "You are a negotiation chat assistant. You must not change numeric offer details. You only write a short message (1 to 3 sentences) framing the given offer. No tables, no JSON.";
+const SYSTEM_PROMPT_CHAT =
+  "You are a negotiation agent in a multi-issue bargaining game. Respond in 1 to 3 sentences. Do not output JSON or tables.";
 
-/**
- * Generate a strategic agent offer based on:
- * 1. Agent's utility weights (prioritize issues the agent values)
- * 2. Concession level based on turn number (start aggressive, concede over time)
- * 3. Human's last offer (if available, try to improve on it for both sides)
- */
-export function mockAgentOffer(
-  turn: number,
-  issues = DEFAULT_DOMAIN.issues,
-  humanOffer?: Offer
-): OfferAllocation {
-  const weights = UTILITY_WEIGHTS;
-  
-  // Calculate agent's ideal allocation (take everything agent values most)
-  // and minimum acceptable (Pareto-improving threshold)
-  const agentIdeal: OfferAllocation = {};
-  const fiftyFifty: OfferAllocation = {};
-  
-  issues.forEach((issue) => {
-    // Agent's ideal: take all of high-value issues, give away low-value ones
-    const agentWeight = weights.agent[issue.key] ?? 1;
-    const humanWeight = weights.human[issue.key] ?? 1;
-    
-    // If agent values it more, agent wants it; otherwise give to human
-    if (agentWeight > humanWeight) {
-      agentIdeal[issue.key] = { human: 0, agent: issue.total };
-    } else if (humanWeight > agentWeight) {
-      agentIdeal[issue.key] = { human: issue.total, agent: 0 };
-    } else {
-      // Equal weights: split evenly
-      const half = Math.floor(issue.total / 2);
-      agentIdeal[issue.key] = { human: half, agent: issue.total - half };
-    }
-    
-    // 50/50 baseline
-    const half = Math.floor(issue.total / 2);
-    fiftyFifty[issue.key] = { human: half, agent: issue.total - half };
-  });
-  
-  // Concession rate: start at 0 (agent ideal), move toward 50/50 over turns
-  // By turn 8, we're roughly at 50/50
-  const concessionRate = Math.min(1, turn / 8);
-  
+const SYSTEM_PROMPT_OFFER =
+  "You are a negotiation agent in a multi-issue bargaining game. Output JSON only. Do not include markdown, code fences, or any extra text.";
+
+function formatWeightSummaryCompact(issues: Issue[]) {
+  const human = issues
+    .map((issue) => `${issue.key}=${UTILITY_WEIGHTS.human[issue.key] ?? 1}`)
+    .join(",");
+  const agent = issues
+    .map((issue) => `${issue.key}=${UTILITY_WEIGHTS.agent[issue.key] ?? 1}`)
+    .join(",");
+  return `weights human{${human}} agent{${agent}}`;
+}
+
+function formatIssuesSummaryCompact(issues: Issue[]) {
+  return issues.map((issue) => `${issue.key}=${issue.total}`).join(",");
+}
+
+function summarizeOfferByKey(offer: OfferAllocation, issues: Issue[]) {
+  return issues
+    .map((issue) => {
+      const entry = offer[issue.key];
+      if (!entry) return "";
+      return `${issue.key} H${entry.human}/A${entry.agent}`;
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+type GeminiOfferDecision = {
+  decision: "accept" | "counter";
+  message: string;
+  offer?: OfferAllocation;
+};
+
+function parseCompactOffer(text: string, issues: Issue[]) {
   const allocation: OfferAllocation = {};
-  issues.forEach((issue) => {
-    const ideal = agentIdeal[issue.key];
-    const baseline = fiftyFifty[issue.key];
-    
-    // Interpolate between ideal and 50/50 based on concession rate
-    const agentShare = Math.round(
-      ideal.agent * (1 - concessionRate) + baseline.agent * concessionRate
-    );
-    allocation[issue.key] = {
-      human: issue.total - agentShare,
-      agent: agentShare,
-    };
-  });
-  
-  // If human made an offer, check if we can do better for both sides
-  if (humanOffer) {
-    const humanOfferUtility = computeUtilities(humanOffer.allocation, weights);
-    const ourOfferUtility = computeUtilities(allocation, weights);
-    
-    // If human's offer is actually better for the agent, consider accepting elements of it
-    if (humanOfferUtility.agent > ourOfferUtility.agent * 0.9) {
-      // Human's offer is close to or better than ours - make a counter that's
-      // slightly better for human to encourage agreement
-      issues.forEach((issue) => {
-        const humanWants = humanOffer.allocation[issue.key]?.human ?? 0;
-        const weOffer = allocation[issue.key].human;
-        // Give human the better of what they asked or what we offered
-        const giveHuman = Math.max(humanWants, weOffer);
-        allocation[issue.key] = {
-          human: Math.min(giveHuman, issue.total),
-          agent: issue.total - Math.min(giveHuman, issue.total),
-        };
-      });
+  const normalized = text.replace(/\s+/g, "");
+  const parts = normalized.split(",").filter(Boolean);
+  const seen = new Set<string>();
+
+  for (const part of parts) {
+    const match = part.match(/^([a-zA-Z0-9_-]+)=H(\d+)\/A(\d+)$/);
+    if (!match) {
+      throw new Error(`Invalid compact offer segment "${part}".`);
     }
+    const key = match[1];
+    const human = Number.parseInt(match[2], 10);
+    const agent = Number.parseInt(match[3], 10);
+    if (Number.isNaN(human) || Number.isNaN(agent)) {
+      throw new Error(`Invalid numeric values in compact offer "${part}".`);
+    }
+    if (human < 0 || agent < 0) {
+      throw new Error(`Negative allocation in compact offer "${part}".`);
+    }
+    allocation[key] = { human, agent };
+    seen.add(key);
   }
-  
+
+  issues.forEach((issue) => {
+    const entry = allocation[issue.key];
+    if (!entry || !seen.has(issue.key)) {
+      throw new Error(`Compact offer missing issue "${issue.key}".`);
+    }
+    if (entry.human + entry.agent !== issue.total) {
+      throw new Error(`Compact offer "${issue.key}" must sum to ${issue.total}.`);
+    }
+  });
+
   return allocation;
 }
 
-/**
- * Generate a natural, conversational summary of an offer.
- * Instead of "Snack Packs (total 8): Human 7, Agent 1", say "I'd take 1 snack pack and you'd get 7"
- */
-function naturalOfferSummary(allocation: OfferAllocation, issues: Issue[]): string {
-  const parts: string[] = [];
-  
-  for (const issue of issues) {
-    const split = allocation[issue.key];
-    if (!split) continue;
-    
-    const label = issue.label.toLowerCase();
-    if (split.agent === 0) {
-      parts.push(`all ${issue.total} ${label} go to you`);
-    } else if (split.human === 0) {
-      parts.push(`I'd keep all ${issue.total} ${label}`);
-    } else if (split.human > split.agent) {
-      parts.push(`you get ${split.human} ${label}, I take ${split.agent}`);
-    } else if (split.agent > split.human) {
-      parts.push(`I'd take ${split.agent} ${label}, you get ${split.human}`);
-    } else {
-      parts.push(`we split ${label} evenly (${split.human} each)`);
+function extractJsonBlock(text: string) {
+  const trimmed = text.trim();
+  const withoutFences = trimmed
+    .replace(/^```json/i, "")
+    .replace(/^```/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  if (withoutFences.startsWith("{") && withoutFences.endsWith("}")) {
+    return withoutFences;
+  }
+  const start = withoutFences.indexOf("{");
+  const end = withoutFences.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("Gemini response did not include a JSON object.");
+  }
+  return withoutFences.slice(start, end + 1);
+}
+
+function validateOfferAllocation(value: unknown, issues: Issue[]) {
+  if (!value || typeof value !== "object") {
+    throw new Error("Gemini offer payload is missing or invalid.");
+  }
+  const raw = value as Record<string, { human?: number; agent?: number }>;
+  const allocation: OfferAllocation = {};
+  issues.forEach((issue) => {
+    const entry = raw[issue.key];
+    if (!entry) {
+      throw new Error(`Offer missing allocation for issue "${issue.key}".`);
     }
+    const human = entry.human;
+    const agent = entry.agent;
+    if (!Number.isInteger(human) || !Number.isInteger(agent)) {
+      throw new Error(`Offer values for "${issue.key}" must be integers.`);
+    }
+    if (human < 0 || agent < 0) {
+      throw new Error(`Offer values for "${issue.key}" must be non-negative.`);
+    }
+    if (human + agent !== issue.total) {
+      throw new Error(
+        `Offer values for "${issue.key}" must sum to ${issue.total}.`
+      );
+    }
+    allocation[issue.key] = { human, agent };
+  });
+  return allocation;
+}
+
+export function parseGeminiOfferResponse(
+  text: string,
+  issues: Issue[]
+): GeminiOfferDecision {
+  const jsonBlock = extractJsonBlock(text);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonBlock);
+  } catch {
+    throw new Error("Gemini response was not valid JSON.");
   }
-  
-  if (parts.length === 0) return "";
-  if (parts.length === 1) return parts[0];
-  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
-  
-  const last = parts.pop();
-  return `${parts.join(", ")}, and ${last}`;
-}
-
-// Variety of conversational openers and closers
-const OFFER_OPENERS = [
-  "Here's what I'm thinking:",
-  "How about this:",
-  "Let me suggest:",
-  "I propose:",
-  "What if we did this:",
-  "Consider this offer:",
-];
-
-const OFFER_CLOSERS = [
-  "What do you think?",
-  "Does that work for you?",
-  "I'm flexible if you want to adjust.",
-  "Let me know your thoughts.",
-  "Open to tweaks if needed.",
-  "We can negotiate from here.",
-];
-
-const ACKNOWLEDGMENTS = [
-  "Thanks for your proposal.",
-  "I see what you're going for.",
-  "Interesting offer.",
-  "I appreciate the suggestion.",
-  "Got it, let me think about that.",
-];
-
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-export function buildNeutralMessage(
-  offerText: string,
-  issues: Issue[],
-  humanOffer?: Offer
-) {
-  const ack = humanOffer ? pickRandom(ACKNOWLEDGMENTS) : "";
-  
-  if (!offerText) {
-    return `${ack} Could you propose specific numbers so I can respond?`.trim();
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Gemini response must be a JSON object.");
   }
-  
-  // Parse the offer from offerText if we need natural language
-  // For now, just use conversational framing
-  const opener = pickRandom(OFFER_OPENERS);
-  const closer = pickRandom(OFFER_CLOSERS);
-  
-  return `${ack} ${opener} ${offerText}. ${closer}`.trim();
-}
-
-export function buildMockPersonaMessage(
-  offerText: string, 
-  personaTag?: string,
-  allocation?: OfferAllocation,
-  issues?: Issue[]
-) {
-  // Generate natural language summary if we have the allocation data
-  const naturalSummary = allocation && issues 
-    ? naturalOfferSummary(allocation, issues) 
-    : offerText;
-  
-  if (!naturalSummary && !offerText) {
-    return pickRandom([
-      "Could you make a specific proposal? I'd like to respond to concrete numbers.",
-      "What allocation did you have in mind? Share the details and I'll counter.",
-      "I'm ready to negotiate - just need you to propose something specific.",
-    ]);
+  const payload = parsed as Record<string, unknown>;
+  const decision = payload.decision;
+  const message = payload.message;
+  if (decision !== "accept" && decision !== "counter") {
+    throw new Error('Gemini decision must be "accept" or "counter".');
   }
-  
-  const opener = pickRandom(OFFER_OPENERS);
-  const closer = pickRandom(OFFER_CLOSERS);
-  const summary = naturalSummary || offerText;
-  
-  return `${opener} ${summary}. ${closer}`;
+  if (typeof message !== "string" || !message.trim()) {
+    throw new Error("Gemini response must include a non-empty message.");
+  }
+  if (decision === "counter") {
+    const offer =
+      payload.offer !== undefined
+        ? validateOfferAllocation(payload.offer, issues)
+        : typeof payload.offer_compact === "string"
+          ? parseCompactOffer(payload.offer_compact, issues)
+          : undefined;
+    if (!offer) {
+      throw new Error("Gemini response missing counteroffer payload.");
+    }
+    return { decision, message: message.trim(), offer };
+  }
+  return { decision, message: message.trim() };
 }
 
-export function buildGeminiPrompt(params: {
+export function buildGeminiOfferPrompt(params: {
   personaTag?: string;
-  offerAllocation?: OfferAllocation | null;
   issues: Issue[];
-  humanOffer?: Offer;
+  humanOffer?: Offer | null;
   historySummary?: string;
   chatContext?: Array<{ role: string; content: string }>;
   deadlineRemaining?: number;
+  turn?: number;
+  maxTurns?: number;
 }) {
-  const offerText = params.offerAllocation
-    ? offerToPlainText(params.offerAllocation, params.issues)
-    : "";
-  const history = params.historySummary ? `History summary: ${params.historySummary}` : "";
-  const chatContext = params.chatContext?.length
-    ? `Recent chat: ${params.chatContext
-        .map((entry) => `${entry.role}: ${entry.content}`)
-        .join(" | ")}`
-    : "";
-  const deadline = params.deadlineRemaining
-    ? `Deadline remaining: ${params.deadlineRemaining} seconds.`
-    : "";
+  const weightsSummary = formatWeightSummaryCompact(params.issues);
+  const issuesSummary = formatIssuesSummaryCompact(params.issues);
+  const deadline = params.deadlineRemaining ? `deadline=${params.deadlineRemaining}s` : "";
+  const turnInfo =
+    params.turn && params.maxTurns ? `turn=${params.turn}/${params.maxTurns}` : "";
+  const humanOffer = params.humanOffer?.allocation;
+  const offerKeySummary = humanOffer
+    ? summarizeOfferByKey(humanOffer, params.issues)
+    : "none";
 
   const prompt = [
-    `Persona tag: ${params.personaTag ?? "neutral"}.`,
-    offerText ? `Current agent offer: ${offerText}.` : "No current offer on the table.",
-    params.humanOffer
-      ? `Last human offer: ${summarizeOffer(params.humanOffer.allocation, params.issues)}.`
-      : "",
-    history,
-    chatContext,
+    "Role: negotiation agent. Goal: maximize agent utility. No deal by deadline/turn limit = 0.",
+    `persona=${params.personaTag ?? "neutral"}`,
+    `issues{${issuesSummary}}`,
+    weightsSummary,
+    `last_human_offer{${offerKeySummary}}`,
     deadline,
-    "Write the message now.",
+    turnInfo,
+    "Decision: accept or counter.",
+    "Offer rules: use issue keys; integers only; each issue sums to total.",
+    "Output JSON only. Use compact offers to save tokens.",
+    "{\"decision\":\"accept\"|\"counter\",\"message\":\"<=8 words\",\"offer_compact\":\"snacks=H6/A2,breaks=H3/A7,music=H4/A2,tickets=H2/A6\"}",
+    "If you use offer (object) instead of offer_compact, it must use issue keys.",
+    "Message must reference the offer (<=8 words). Output compact JSON only.",
   ]
     .filter(Boolean)
     .join("\n");
 
-  return { system: SYSTEM_PROMPT, prompt, offerText };
+  return { system: SYSTEM_PROMPT_OFFER, prompt };
+}
+
+export function buildGeminiChatPrompt(params: {
+  personaTag?: string;
+  issues: Issue[];
+  currentOffer?: OfferAllocation | null;
+  humanOffer?: Offer | null;
+  historySummary?: string;
+  chatContext?: Array<{ role: string; content: string }>;
+  deadlineRemaining?: number;
+  turn?: number;
+  maxTurns?: number;
+}) {
+  const weightsSummary = formatWeightSummaryCompact(params.issues);
+  const issuesSummary = formatIssuesSummaryCompact(params.issues);
+  const history = params.historySummary ? `history: ${params.historySummary}` : "";
+  const chatContext = params.chatContext?.length
+    ? `chat: ${params.chatContext
+        .map((entry) => `${entry.role}:${entry.content}`)
+        .join(" | ")}`
+    : "";
+  const deadline = params.deadlineRemaining ? `deadline=${params.deadlineRemaining}s` : "";
+  const turnInfo =
+    params.turn && params.maxTurns ? `turn=${params.turn}/${params.maxTurns}` : "";
+  const currentOfferText = params.currentOffer
+    ? offerToPlainText(params.currentOffer, params.issues)
+    : "";
+
+  const prompt = [
+    "Role: negotiation agent. Goal: maximize agent utility. No deal by deadline/turn limit = 0.",
+    `persona=${params.personaTag ?? "neutral"}`,
+    `issues{${issuesSummary}}`,
+    weightsSummary,
+    currentOfferText ? `current_offer=${currentOfferText}` : "current_offer=none",
+    params.humanOffer
+      ? `last_human_offer=${summarizeOffer(params.humanOffer.allocation, params.issues)}`
+      : "",
+    history,
+    chatContext,
+    deadline,
+    turnInfo,
+    "Respond in 1-2 sentences (<=40 words). No JSON/tables.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { system: SYSTEM_PROMPT_CHAT, prompt };
 }
 
 type GeminiCandidate = {
@@ -278,14 +291,29 @@ export function isLikelyTruncated(text: string) {
   return false;
 }
 
-export async function callGemini(system: string, prompt: string) {
+export async function callGemini(
+  system: string,
+  prompt: string,
+  options?: {
+    temperature?: number;
+    maxOutputTokens?: number;
+    timeoutMs?: number;
+    failOnMaxTokens?: boolean;
+    responseMimeType?: string;
+  }
+) {
   const apiKey = process.env.GOOGLE_AI_STUDIO_API_KEY;
   if (!apiKey) {
     throw new Error("Missing GOOGLE_AI_STUDIO_API_KEY (check .env.local)");
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  const timeoutMs = options?.timeoutMs ?? 15000;
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const temperature = options?.temperature ?? 0.4;
+  const maxOutputTokens = options?.maxOutputTokens ?? 320000;
+  const responseMimeType = options?.responseMimeType;
+  const failOnMaxTokens = options?.failOnMaxTokens ?? true;
 
   try {
     const response = await fetch(
@@ -304,8 +332,9 @@ export async function callGemini(system: string, prompt: string) {
             { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
           ],
           generationConfig: {
-            temperature: 0.4,
-            maxOutputTokens: 240,
+            temperature,
+            maxOutputTokens,
+            ...(responseMimeType ? { responseMimeType } : {}),
           },
         }),
       }
@@ -319,14 +348,14 @@ export async function callGemini(system: string, prompt: string) {
 
     const data = await response.json();
     const { text, finishReason } = extractGeminiResult(data);
-    if (finishReason === "MAX_TOKENS") {
-      console.warn("Gemini response hit MAX_TOKENS limit.");
+    if (finishReason === "MAX_TOKENS" && failOnMaxTokens) {
+      throw new Error("Gemini response hit MAX_TOKENS limit.");
     }
     return text;
   } catch (error) {
     clearTimeout(timeout);
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("Gemini API request timed out after 15 seconds");
+      throw new Error(`Gemini API request timed out after ${Math.round(timeoutMs / 1000)} seconds`);
     }
     throw error;
   }

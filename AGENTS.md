@@ -27,7 +27,6 @@
 
 ## Env Vars
 - `GOOGLE_AI_STUDIO_API_KEY` (required for persona mode).
-- `NEXT_PUBLIC_MOCK_MODE=true` to skip Gemini.
 - `ADMIN_USER` / `ADMIN_PASSWORD` for /admin basic auth.
 
 ## Scripts

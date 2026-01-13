@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import LayoutShell from "@/components/LayoutShell";
+import AnalyticsCharts from "@/components/admin/AnalyticsCharts";
+import DataTable from "@/components/admin/DataTable";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { usePageView } from "@/hooks/usePageView";
@@ -21,14 +24,59 @@ type AdminSession = {
   duration_seconds: number;
 };
 
+type SummaryRow = {
+  condition_id: string;
+  agreement_rate: number | null;
+  avg_joint_utility: number | null;
+  avg_efficiency: number | null;
+  avg_fairness_index: number | null;
+  avg_nash_ratio: number | null;
+  pareto_efficiency_rate: number | null;
+  avg_response: number | null;
+};
+
+type PlotRow = {
+  turn: number | string;
+  neutral_human_concession: number | "";
+  neutral_agent_concession: number | "";
+  persona_human_concession: number | "";
+  persona_agent_concession: number | "";
+};
+
+type LegendRow = {
+  metric: string;
+  definition: string;
+  range: string;
+  direction: string;
+  notes: string;
+};
+
+type AnalyticsResponse = {
+  ok: boolean;
+  generated_at: string;
+  file_count: number;
+  summary: SummaryRow[];
+  sessions: Array<Record<string, unknown>>;
+  offers: Array<Record<string, unknown>>;
+  chats: Array<Record<string, unknown>>;
+  survey: Array<Record<string, unknown>>;
+  concessions: Array<Record<string, unknown>>;
+  concession_curves: Array<Record<string, unknown>>;
+  plots: PlotRow[];
+  legend: LegendRow[];
+};
+
 export default function AdminPage() {
   usePageView("/admin");
   const [sessions, setSessions] = useState<AdminSession[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
 
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -43,11 +91,32 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  const loadAnalytics = useCallback(async () => {
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    try {
+      const response = await fetch("/api/admin/analytics", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`Analytics failed: ${response.status}`);
+      }
+      const data = (await response.json()) as AnalyticsResponse;
+      if (!data.ok) {
+        throw new Error("Analytics response returned ok=false.");
+      }
+      setAnalytics(data);
+    } catch (err) {
+      setAnalyticsError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void loadSessions();
-  }, []);
+    void loadAnalytics();
+  }, [loadAnalytics, loadSessions]);
 
   const handleDownload = async (filename: string) => {
     setDownloading(filename);
@@ -72,7 +141,156 @@ export default function AdminPage() {
   };
 
   return (
-    <LayoutShell className="max-w-5xl">
+    <LayoutShell className="max-w-7xl">
+      <Card className="glass-panel">
+        <CardHeader>
+          <CardTitle className="text-2xl">Admin: Analytics</CardTitle>
+          <CardDescription>
+            Summary metrics, plots, and full raw tables derived from{" "}
+            <span className="font-mono">data/</span> sessions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-muted-foreground">
+              {analyticsLoading
+                ? "Recomputing analytics..."
+                : analytics
+                  ? `Last updated ${new Date(analytics.generated_at).toLocaleString()} (${analytics.file_count} files)`
+                  : "No analytics data loaded yet."}
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => void Promise.all([loadSessions(), loadAnalytics()])}
+              disabled={loading || analyticsLoading}
+            >
+              Refresh Analytics
+            </Button>
+          </div>
+
+          {analyticsError ? (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {analyticsError}
+            </div>
+          ) : null}
+
+          <Separator />
+
+          <div className="space-y-10">
+            <div className="space-y-4">
+              <div>
+                <div className="text-base font-semibold text-foreground">Legend</div>
+                <div className="text-sm text-muted-foreground">
+                  Definitions and expected direction for each metric.
+                </div>
+              </div>
+              {analytics?.legend?.length ? (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {analytics.legend.map((item) => {
+                    const direction =
+                      item.direction === "Higher is better"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : item.direction === "Lower is better"
+                          ? "bg-rose-100 text-rose-700"
+                          : "bg-amber-100 text-amber-700";
+                    return (
+                      <div
+                        key={item.metric}
+                        className="rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-foreground">
+                            {item.metric}
+                          </div>
+                          <Badge className={direction}>{item.direction}</Badge>
+                        </div>
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          {item.definition}
+                        </div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          Range: {item.range}
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">{item.notes}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                  No legend data available.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <div className="text-base font-semibold text-foreground">Plots</div>
+                <div className="text-sm text-muted-foreground">
+                  Visual comparisons across conditions and concession dynamics.
+                </div>
+              </div>
+              <AnalyticsCharts summary={analytics?.summary ?? []} plots={analytics?.plots ?? []} />
+            </div>
+
+            <DataTable
+              title="Summary Metrics"
+              description="Aggregate outcomes by condition."
+              rows={analytics?.summary ?? []}
+              maxHeight="320px"
+              dense
+            />
+
+            <DataTable
+              title="Sessions"
+              description="Per-session outcomes and utilities."
+              rows={analytics?.sessions ?? []}
+              maxHeight="420px"
+            />
+
+            <DataTable
+              title="Offers"
+              description="All offers with allocations and utilities."
+              rows={analytics?.offers ?? []}
+              maxHeight="420px"
+              dense
+            />
+
+            <DataTable
+              title="Chat Messages"
+              description="All chat messages and content length."
+              rows={analytics?.chats ?? []}
+              maxHeight="420px"
+            />
+
+            <DataTable
+              title="Survey Responses"
+              description="Post-game survey answers."
+              rows={analytics?.survey ?? []}
+              maxHeight="320px"
+              dense
+            />
+
+            <DataTable
+              title="Concessions"
+              description="Per-offer concessions and cumulative values."
+              rows={analytics?.concessions ?? []}
+              maxHeight="420px"
+              dense
+            />
+
+            <DataTable
+              title="Concession Curves"
+              description="Average concession metrics per condition, role, and turn."
+              rows={analytics?.concession_curves ?? []}
+              maxHeight="320px"
+              dense
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="h-10" />
+
       <Card className="glass-panel">
         <CardHeader>
           <CardTitle className="text-2xl">Admin: Session Logs</CardTitle>

@@ -2,14 +2,10 @@ import { NextResponse } from "next/server";
 
 import { DEFAULT_DOMAIN } from "@/lib/config";
 import type { Offer } from "@/lib/types";
-import { offerToPlainText } from "@/lib/utils";
 import {
-  buildGeminiPrompt,
-  buildMockPersonaMessage,
-  buildNeutralMessage,
+  buildGeminiOfferPrompt,
   callGemini,
-  isLikelyTruncated,
-  mockAgentOffer,
+  parseGeminiOfferResponse,
 } from "@/lib/agent";
 
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
@@ -53,40 +49,44 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
     }
 
-    const turn = body.turn ?? 1;
     const issues = DEFAULT_DOMAIN.issues;
-    const agentOffer = mockAgentOffer(turn + 1, issues);
-    const offerText = offerToPlainText(agentOffer, issues);
+    const personaTag = body.condition_id === "persona" ? body.persona_tag : "neutral";
+    const { system, prompt } = buildGeminiOfferPrompt({
+      personaTag,
+      issues,
+      humanOffer: body.last_human_offer ?? null,
+      historySummary: body.history_summary,
+      chatContext: body.chat_context,
+      deadlineRemaining: body.deadline_remaining,
+      turn: body.turn,
+      maxTurns: DEFAULT_DOMAIN.max_turns,
+    });
 
-    const mockMode = process.env.NEXT_PUBLIC_MOCK_MODE === "true";
+    const raw = await callGemini(system, prompt, {
+      temperature: 0.3,
+      maxOutputTokens: 700000,
+      responseMimeType: "application/json",
+    });
+    const parsed = parseGeminiOfferResponse(raw, issues);
 
-    let agentMessage = "";
-    if (body.condition_id === "persona" && !mockMode) {
-      const { system, prompt } = buildGeminiPrompt({
-        personaTag: body.persona_tag,
-        offerAllocation: agentOffer,
-        issues,
-        humanOffer: body.last_human_offer,
-        historySummary: body.history_summary,
-        chatContext: body.chat_context,
-        deadlineRemaining: body.deadline_remaining,
+    if (parsed.decision === "accept") {
+      if (!body.last_human_offer) {
+        return NextResponse.json(
+          { error: "Agent accepted but no human offer was provided." },
+          { status: 400 }
+        );
+      }
+      return NextResponse.json({
+        agent_message: parsed.message,
+        decision: "accept",
       });
-
-      agentMessage = (await callGemini(system, prompt)).trim();
-    } else if (body.condition_id === "persona" && mockMode) {
-      agentMessage = buildMockPersonaMessage(offerText, body.persona_tag, agentOffer, issues);
-    } else {
-      agentMessage = buildNeutralMessage(offerText, issues, body.last_human_offer);
     }
 
-    if (!agentMessage || isLikelyTruncated(agentMessage)) {
-      agentMessage =
-        body.condition_id === "persona"
-          ? buildMockPersonaMessage(offerText, body.persona_tag, agentOffer, issues)
-          : buildNeutralMessage(offerText, issues, body.last_human_offer);
-    }
-
-    return NextResponse.json({ agent_message: agentMessage, agent_offer: agentOffer });
+    return NextResponse.json({
+      agent_message: parsed.message,
+      agent_offer: parsed.offer,
+      decision: "counter",
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
