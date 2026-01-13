@@ -1,0 +1,616 @@
+{
+  "session_id": "67e73087-444c-413c-954a-27db1c8a69b2",
+  "created_at": "2026-01-12T22:16:07.120Z",
+  "participant": {
+    "participant_id": "UPG72Z",
+    "age_range": "",
+    "gender": "",
+    "notes": ""
+  },
+  "config": {
+    "domain_id": "classroom-perks-01",
+    "issues": [
+      {
+        "key": "snacks",
+        "label": "Snack Packs",
+        "total": 8,
+        "icon": "Cookie"
+      },
+      {
+        "key": "breaks",
+        "label": "Break Minutes",
+        "total": 10,
+        "icon": "Coffee"
+      },
+      {
+        "key": "music",
+        "label": "Music Picks",
+        "total": 6,
+        "icon": "Music"
+      },
+      {
+        "key": "tickets",
+        "label": "Prize Tickets",
+        "total": 8,
+        "icon": "Ticket"
+      }
+    ],
+    "deadline_seconds": 360,
+    "max_turns": 12
+  },
+  "condition": {
+    "id": "neutral"
+  },
+  "events": [
+    {
+      "id": "4c23380e-0e85-496a-a355-9168c80285b2",
+      "t": "2026-01-12T22:16:07.296Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/",
+        "action": "exit",
+        "started_at": "2026-01-12T22:16:01.226Z",
+        "duration_ms": 6070
+      }
+    },
+    {
+      "id": "24cbbc5a-010e-454f-98f6-1aa8d975cdbe",
+      "t": "2026-01-12T22:16:07.297Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/consent",
+        "action": "enter",
+        "started_at": "2026-01-12T22:16:07.297Z"
+      }
+    },
+    {
+      "id": "0bb4690b-fcf1-432a-9713-59ba3c4060e0",
+      "t": "2026-01-12T22:16:07.297Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/consent",
+        "action": "exit",
+        "started_at": "2026-01-12T22:16:07.297Z",
+        "duration_ms": 0
+      }
+    },
+    {
+      "id": "046d67b2-6d46-4724-a887-aecee6684363",
+      "t": "2026-01-12T22:16:07.298Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/consent",
+        "action": "enter",
+        "started_at": "2026-01-12T22:16:07.298Z"
+      }
+    },
+    {
+      "id": "3fa1efd9-b90e-40e9-a26e-ea7a7d8e45c0",
+      "t": "2026-01-12T22:16:09.916Z",
+      "type": "consent",
+      "payload": {
+        "accepted": true,
+        "demographics": {
+          "consent": true,
+          "age_range": "",
+          "gender": "",
+          "notes": ""
+        }
+      }
+    },
+    {
+      "id": "bd7f47dd-6502-414a-a4a2-c4a824122b54",
+      "t": "2026-01-12T22:16:10.175Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/consent",
+        "action": "exit",
+        "started_at": "2026-01-12T22:16:07.298Z",
+        "duration_ms": 2877
+      }
+    },
+    {
+      "id": "233128fb-3e4f-4f09-9a83-1842b422ba5d",
+      "t": "2026-01-12T22:16:10.176Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/instructions",
+        "action": "enter",
+        "started_at": "2026-01-12T22:16:10.176Z"
+      }
+    },
+    {
+      "id": "04eff241-2102-4a93-b0e2-7622de9ba98d",
+      "t": "2026-01-12T22:16:10.176Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/instructions",
+        "action": "exit",
+        "started_at": "2026-01-12T22:16:10.176Z",
+        "duration_ms": 0
+      }
+    },
+    {
+      "id": "f10d41ea-63bb-4ff5-a76f-58abe22d6672",
+      "t": "2026-01-12T22:16:10.177Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/instructions",
+        "action": "enter",
+        "started_at": "2026-01-12T22:16:10.177Z"
+      }
+    },
+    {
+      "id": "1ab1d66d-f35e-40e1-b7e7-7a5cb6dc8870",
+      "t": "2026-01-12T22:16:14.411Z",
+      "type": "instruction_ack",
+      "payload": {
+        "acknowledged": true
+      }
+    },
+    {
+      "id": "dfca6403-6059-442d-8941-5afee232baa5",
+      "t": "2026-01-12T22:16:14.573Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/instructions",
+        "action": "exit",
+        "started_at": "2026-01-12T22:16:10.177Z",
+        "duration_ms": 4396
+      }
+    },
+    {
+      "id": "a15c3ca2-8827-46ea-9090-9539b51cbe02",
+      "t": "2026-01-12T22:16:14.574Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/negotiate",
+        "action": "enter",
+        "started_at": "2026-01-12T22:16:14.574Z"
+      }
+    },
+    {
+      "id": "f550214e-7db0-450a-abbb-9e16fb305a0f",
+      "t": "2026-01-12T22:16:14.574Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/negotiate",
+        "action": "exit",
+        "started_at": "2026-01-12T22:16:14.574Z",
+        "duration_ms": 0
+      }
+    },
+    {
+      "id": "03675e49-29e5-4584-8d44-52f9dd59adce",
+      "t": "2026-01-12T22:16:14.574Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/negotiate",
+        "action": "enter",
+        "started_at": "2026-01-12T22:16:14.574Z"
+      }
+    },
+    {
+      "id": "59294f56-b4d5-47dd-a49f-e55de1377515",
+      "t": "2026-01-12T22:16:22.725Z",
+      "type": "offer_propose",
+      "payload": {
+        "offer": {
+          "turn": 1,
+          "by": "human",
+          "allocation": {
+            "snacks": {
+              "human": 8,
+              "agent": 0
+            },
+            "breaks": {
+              "human": 10,
+              "agent": 0
+            },
+            "music": {
+              "human": 6,
+              "agent": 0
+            },
+            "tickets": {
+              "human": 8,
+              "agent": 0
+            }
+          },
+          "created_at": "2026-01-12T22:16:22.725Z"
+        }
+      }
+    },
+    {
+      "id": "860bfa68-9777-4a0b-be15-ba8eae187ac3",
+      "t": "2026-01-12T22:16:22.810Z",
+      "type": "offer_receive",
+      "payload": {
+        "offer": {
+          "turn": 2,
+          "by": "agent",
+          "allocation": {
+            "snacks": {
+              "human": 7,
+              "agent": 1
+            },
+            "breaks": {
+              "human": 1,
+              "agent": 9
+            },
+            "music": {
+              "human": 3,
+              "agent": 3
+            },
+            "tickets": {
+              "human": 1,
+              "agent": 7
+            }
+          },
+          "created_at": "2026-01-12T22:16:22.810Z"
+        }
+      }
+    },
+    {
+      "id": "8140c214-3579-4881-8b6e-2901db023126",
+      "t": "2026-01-12T22:16:22.810Z",
+      "type": "chat_receive",
+      "payload": {
+        "content": "I see what you're going for. Here's what I'm thinking: Snack Packs (total 8): Human 7, Agent 1. Break Minutes (total 10): Human 1, Agent 9. Music Picks (total 6): Human 3, Agent 3. Prize Tickets (total 8): Human 1, Agent 7. Open to tweaks if needed.",
+        "turn": 2
+      }
+    },
+    {
+      "id": "b10bae10-1c1f-4ef8-97d0-d15eaf6fa8d5",
+      "t": "2026-01-12T22:16:34.722Z",
+      "type": "offer_propose",
+      "payload": {
+        "offer": {
+          "turn": 3,
+          "by": "human",
+          "allocation": {
+            "snacks": {
+              "human": 8,
+              "agent": 0
+            },
+            "breaks": {
+              "human": 5,
+              "agent": 5
+            },
+            "music": {
+              "human": 4,
+              "agent": 2
+            },
+            "tickets": {
+              "human": 4,
+              "agent": 4
+            }
+          },
+          "created_at": "2026-01-12T22:16:34.722Z"
+        }
+      }
+    },
+    {
+      "id": "2acb8581-5761-4fa7-9a06-61594912c031",
+      "t": "2026-01-12T22:16:34.763Z",
+      "type": "offer_receive",
+      "payload": {
+        "offer": {
+          "turn": 4,
+          "by": "agent",
+          "allocation": {
+            "snacks": {
+              "human": 6,
+              "agent": 2
+            },
+            "breaks": {
+              "human": 2,
+              "agent": 8
+            },
+            "music": {
+              "human": 3,
+              "agent": 3
+            },
+            "tickets": {
+              "human": 2,
+              "agent": 6
+            }
+          },
+          "created_at": "2026-01-12T22:16:34.763Z"
+        }
+      }
+    },
+    {
+      "id": "b5d0063e-4213-4cbd-b5d7-84d8ea52f08e",
+      "t": "2026-01-12T22:16:34.763Z",
+      "type": "chat_receive",
+      "payload": {
+        "content": "I appreciate the suggestion. Let me suggest: Snack Packs (total 8): Human 6, Agent 2. Break Minutes (total 10): Human 2, Agent 8. Music Picks (total 6): Human 3, Agent 3. Prize Tickets (total 8): Human 2, Agent 6. I'm flexible if you want to adjust.",
+        "turn": 4
+      }
+    },
+    {
+      "id": "2a3555a1-dfe7-4651-baa5-7e60e4e7661f",
+      "t": "2026-01-12T22:16:52.268Z",
+      "type": "offer_propose",
+      "payload": {
+        "offer": {
+          "turn": 5,
+          "by": "human",
+          "allocation": {
+            "snacks": {
+              "human": 8,
+              "agent": 0
+            },
+            "breaks": {
+              "human": 2,
+              "agent": 8
+            },
+            "music": {
+              "human": 4,
+              "agent": 2
+            },
+            "tickets": {
+              "human": 3,
+              "agent": 5
+            }
+          },
+          "created_at": "2026-01-12T22:16:52.268Z"
+        }
+      }
+    },
+    {
+      "id": "fbae0dec-5450-4aca-9695-3a5aedd4cf64",
+      "t": "2026-01-12T22:16:52.310Z",
+      "type": "offer_receive",
+      "payload": {
+        "offer": {
+          "turn": 6,
+          "by": "agent",
+          "allocation": {
+            "snacks": {
+              "human": 5,
+              "agent": 3
+            },
+            "breaks": {
+              "human": 4,
+              "agent": 6
+            },
+            "music": {
+              "human": 3,
+              "agent": 3
+            },
+            "tickets": {
+              "human": 3,
+              "agent": 5
+            }
+          },
+          "created_at": "2026-01-12T22:16:52.310Z"
+        }
+      }
+    },
+    {
+      "id": "b65bf003-4347-4e5e-a38c-9868a40dd035",
+      "t": "2026-01-12T22:16:52.310Z",
+      "type": "chat_receive",
+      "payload": {
+        "content": "Interesting offer. Let me suggest: Snack Packs (total 8): Human 5, Agent 3. Break Minutes (total 10): Human 4, Agent 6. Music Picks (total 6): Human 3, Agent 3. Prize Tickets (total 8): Human 3, Agent 5. Let me know your thoughts.",
+        "turn": 6
+      }
+    },
+    {
+      "id": "8c6c0f83-d0e0-4145-bf80-437525a47fb3",
+      "t": "2026-01-12T22:17:03.177Z",
+      "type": "offer_propose",
+      "payload": {
+        "offer": {
+          "turn": 7,
+          "by": "human",
+          "allocation": {
+            "snacks": {
+              "human": 7,
+              "agent": 1
+            },
+            "breaks": {
+              "human": 0,
+              "agent": 10
+            },
+            "music": {
+              "human": 5,
+              "agent": 1
+            },
+            "tickets": {
+              "human": 0,
+              "agent": 8
+            }
+          },
+          "created_at": "2026-01-12T22:17:03.176Z"
+        }
+      }
+    },
+    {
+      "id": "70f6b5da-ebba-4191-b8ad-96d3e24495c2",
+      "t": "2026-01-12T22:17:03.221Z",
+      "type": "offer_receive",
+      "payload": {
+        "offer": {
+          "turn": 8,
+          "by": "agent",
+          "allocation": {
+            "snacks": {
+              "human": 4,
+              "agent": 4
+            },
+            "breaks": {
+              "human": 5,
+              "agent": 5
+            },
+            "music": {
+              "human": 3,
+              "agent": 3
+            },
+            "tickets": {
+              "human": 4,
+              "agent": 4
+            }
+          },
+          "created_at": "2026-01-12T22:17:03.221Z"
+        }
+      }
+    },
+    {
+      "id": "55b22b8f-4bd2-42a5-a087-abb5d651fa82",
+      "t": "2026-01-12T22:17:03.221Z",
+      "type": "chat_receive",
+      "payload": {
+        "content": "Thanks for your proposal. Here's what I'm thinking: Snack Packs (total 8): Human 4, Agent 4. Break Minutes (total 10): Human 5, Agent 5. Music Picks (total 6): Human 3, Agent 3. Prize Tickets (total 8): Human 4, Agent 4. Does that work for you?",
+        "turn": 8
+      }
+    },
+    {
+      "id": "755b6e9c-b592-44da-9d15-a4e2dab82cfa",
+      "t": "2026-01-12T22:17:11.623Z",
+      "type": "offer_accept",
+      "payload": {
+        "offer": {
+          "turn": 8,
+          "by": "agent",
+          "allocation": {
+            "snacks": {
+              "human": 4,
+              "agent": 4
+            },
+            "breaks": {
+              "human": 5,
+              "agent": 5
+            },
+            "music": {
+              "human": 3,
+              "agent": 3
+            },
+            "tickets": {
+              "human": 4,
+              "agent": 4
+            }
+          },
+          "created_at": "2026-01-12T22:17:03.221Z"
+        }
+      }
+    },
+    {
+      "id": "7cecc136-5d7d-49f9-b677-e66065c90989",
+      "t": "2026-01-12T22:17:11.624Z",
+      "type": "end",
+      "payload": {
+        "reason": "agreement",
+        "agreed_offer": {
+          "turn": 8,
+          "by": "agent",
+          "allocation": {
+            "snacks": {
+              "human": 4,
+              "agent": 4
+            },
+            "breaks": {
+              "human": 5,
+              "agent": 5
+            },
+            "music": {
+              "human": 3,
+              "agent": 3
+            },
+            "tickets": {
+              "human": 4,
+              "agent": 4
+            }
+          },
+          "created_at": "2026-01-12T22:17:03.221Z"
+        }
+      }
+    },
+    {
+      "id": "9ada0763-d6bb-414e-870d-efa1d06c0ae7",
+      "t": "2026-01-12T22:17:11.765Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/negotiate",
+        "action": "exit",
+        "started_at": "2026-01-12T22:16:14.574Z",
+        "duration_ms": 57190
+      }
+    },
+    {
+      "id": "704825ed-62e1-48f8-8900-c42e64b9bdd6",
+      "t": "2026-01-12T22:17:11.766Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/survey",
+        "action": "enter",
+        "started_at": "2026-01-12T22:17:11.766Z"
+      }
+    },
+    {
+      "id": "bd4ac605-4cbf-4f24-a7f6-a1e81ea2f97d",
+      "t": "2026-01-12T22:17:11.766Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/survey",
+        "action": "exit",
+        "started_at": "2026-01-12T22:17:11.766Z",
+        "duration_ms": 0
+      }
+    },
+    {
+      "id": "0c57ff31-b31a-40aa-840a-c2c6d246178c",
+      "t": "2026-01-12T22:17:11.766Z",
+      "type": "page_view",
+      "payload": {
+        "path": "/survey",
+        "action": "enter",
+        "started_at": "2026-01-12T22:17:11.766Z"
+      }
+    }
+  ],
+  "outcome": {
+    "turns": 8,
+    "duration_seconds": 57,
+    "ended_at": "2026-01-12T22:17:11.624Z",
+    "reason": "agreement",
+    "agreed_offer": {
+      "turn": 8,
+      "by": "agent",
+      "allocation": {
+        "snacks": {
+          "human": 4,
+          "agent": 4
+        },
+        "breaks": {
+          "human": 5,
+          "agent": 5
+        },
+        "music": {
+          "human": 3,
+          "agent": 3
+        },
+        "tickets": {
+          "human": 4,
+          "agent": 4
+        }
+      },
+      "created_at": "2026-01-12T22:17:03.221Z"
+    },
+    "utilities": {
+      "human": 27,
+      "agent": 42,
+      "joint": 69
+    }
+  },
+  "survey": {
+    "t": "2026-01-12T22:17:27.840Z",
+    "fairness": 3,
+    "trust": 1,
+    "cooperativeness": 2,
+    "human_likeness": 2,
+    "satisfaction": 1,
+    "negotiate_again": 5
+  }
+}
