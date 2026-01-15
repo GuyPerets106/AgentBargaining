@@ -2,14 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  ClipboardList,
-  Loader2,
-  ShieldCheck,
-  ThumbsDown,
-  ThumbsUp,
-} from "lucide-react";
+import { AlertTriangle, ClipboardList, Loader2, ShieldCheck, ThumbsUp } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import ChatPanel from "@/components/ChatPanel";
@@ -229,22 +222,6 @@ export default function NegotiatePage() {
     }
     addEvent("offer_accept", { offer: currentAgentOffer, by: "human" });
     completeSession("agreement", currentAgentOffer);
-  };
-
-  const handleReject = () => {
-    if (!currentAgentOffer) {
-      toast({
-        title: "No offer to reject",
-        description: "Wait for the agent to respond first.",
-        variant: "destructive",
-      });
-      return;
-    }
-    addEvent("offer_reject", { offer: currentAgentOffer });
-    toast({
-      title: "Offer rejected",
-      description: "Adjust your offer and propose a counteroffer.",
-    });
   };
 
   const handleChatSend = async (message: string) => {
@@ -523,10 +500,6 @@ export default function NegotiatePage() {
                     <Button variant="secondary" onClick={handleAccept} disabled={isAwaitingAgent}>
                       <ThumbsUp className="h-4 w-4" />
                       Accept Offer
-                    </Button>
-                    <Button variant="outline" onClick={handleReject} disabled={isAwaitingAgent}>
-                      <ThumbsDown className="h-4 w-4" />
-                      Reject / Counter
                     </Button>
                   </div>
                 </CardContent>
