@@ -38,6 +38,7 @@ export async function POST(req: Request) {
       deadline_remaining?: number;
       chat_context?: Array<{ role: string; content: string }>;
       latest_user_message?: string;
+      decision_summary?: string;
     };
 
     const sessionId = body.session_id ?? "";
@@ -59,6 +60,7 @@ export async function POST(req: Request) {
       historySummary: body.history_summary,
       chatContext: body.chat_context,
       latestUserMessage: body.latest_user_message,
+      decisionSummary: body.decision_summary,
       deadlineRemaining: body.deadline_remaining,
       turn: body.turn,
       maxTurns: DEFAULT_DOMAIN.max_turns,

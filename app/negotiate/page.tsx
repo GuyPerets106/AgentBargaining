@@ -10,6 +10,7 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from "lucide-react";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import ChatPanel from "@/components/ChatPanel";
 import ConditionBadge from "@/components/ConditionBadge";
@@ -31,7 +32,7 @@ import {
   computeUtilities,
   nowIso,
   summarizeHistory,
-  summarizeOffer,
+  summarizeDecisions,
 } from "@/lib/utils";
 import { usePageView } from "@/hooks/usePageView";
 import { useSessionStore } from "@/store/useSessionStore";
@@ -80,6 +81,11 @@ export default function NegotiatePage() {
     () => [...offers].reverse().find((offer) => offer.by === "human"),
     [offers]
   );
+
+  const decisionSummary = useMemo(() => {
+    if (!session) return "";
+    return summarizeDecisions(session.events, 10);
+  }, [session]);
 
   const offerIsValid = useMemo(() => {
     if (!draftOffer) return false;
@@ -152,9 +158,10 @@ export default function NegotiatePage() {
           persona_tag: session.condition.persona_tag,
           last_human_offer: offer,
           turn: nextTurn,
-          history_summary: summarizeHistory([...offers, offer]),
+          history_summary: summarizeHistory([...offers, offer], session.config.max_turns),
+          decision_summary: decisionSummary,
           deadline_remaining: deadlineRemaining,
-          chat_context: chat.slice(-4).map((message) => ({
+          chat_context: chat.slice(-12).map((message) => ({
             role: message.role,
             content: message.content,
           })),
@@ -257,9 +264,10 @@ export default function NegotiatePage() {
           current_offer: currentAgentOffer?.allocation ?? null,
           last_human_offer: lastHumanOffer ?? null,
           turn: offers.length,
-          history_summary: summarizeHistory(offers),
+          history_summary: summarizeHistory(offers, session.config.max_turns),
+          decision_summary: decisionSummary,
           deadline_remaining: deadlineRemaining,
-          chat_context: [...chat, { role: "human", content: message }].slice(-4),
+          chat_context: [...chat, { role: "human", content: message }].slice(-12),
           latest_user_message: message,
         }),
       });
@@ -290,11 +298,140 @@ export default function NegotiatePage() {
 
   if (!session) return null;
 
-  const currentUtilities = currentAgentOffer ? computeUtilities(currentAgentOffer.allocation, UTILITY_WEIGHTS) : null;
+  const currentUtilities = currentAgentOffer
+    ? computeUtilities(currentAgentOffer.allocation, UTILITY_WEIGHTS)
+    : null;
+  const offerTotals = useMemo(() => {
+    if (!currentAgentOffer) return null;
+    return issues.reduce(
+      (acc, issue) => {
+        const allocation = currentAgentOffer.allocation[issue.key];
+        if (allocation) {
+          acc.human += allocation.human;
+          acc.agent += allocation.agent;
+        }
+        acc.total += issue.total;
+        return acc;
+      },
+      { human: 0, agent: 0, total: 0 }
+    );
+  }, [currentAgentOffer, issues]);
+  const offerPieData = offerTotals
+    ? [
+        { name: "You", value: offerTotals.human },
+        { name: "Agent", value: offerTotals.agent },
+      ]
+    : [];
+  const issuePalette = ["#0ea5e9", "#22d3ee", "#10b981", "#f97316", "#6366f1", "#f59e0b"];
 
   return (
     <LayoutShell className="max-w-none">
-      <NegotiationLayout
+      <div className="space-y-8">
+        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+          <Card className="glass-panel">
+            <CardHeader>
+              <CardTitle className="text-lg">Offer Summary</CardTitle>
+              <CardDescription>Allocation share for the current agent offer.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {currentAgentOffer && offerTotals ? (
+                <>
+                  <div className="relative h-80 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={offerPieData}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={70}
+                          outerRadius={125}
+                          paddingAngle={2}
+                        >
+                          <Cell fill="#0ea5e9" />
+                          <Cell fill="#f59e0b" />
+                        </Pie>
+                        <Tooltip formatter={(value, name) => [`${value} units`, name]} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+                        Total Units
+                      </div>
+                      <div className="text-4xl font-semibold text-foreground">
+                        {offerTotals.total}
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        You {offerTotals.human} · Agent {offerTotals.agent}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-border/60 bg-background/70 px-4 py-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Your points
+                      </div>
+                      <div className="text-2xl font-semibold text-foreground">
+                        {currentUtilities?.human ?? "—"}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/60 bg-background/70 px-4 py-3">
+                      <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        Agent points
+                      </div>
+                      <div className="text-2xl font-semibold text-foreground">
+                        {currentUtilities?.agent ?? "—"}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-80 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/30 text-sm text-muted-foreground">
+                  Waiting for the agent's first offer.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <Card className="glass-panel">
+            <CardHeader>
+              <CardTitle className="text-lg">Preference Weights</CardTitle>
+              <CardDescription>Higher points per unit = higher priority.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="grid grid-cols-[1.3fr_0.8fr_0.8fr] text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                <span>Issue</span>
+                <span className="text-right">You</span>
+                <span className="text-right">Agent</span>
+              </div>
+              <div className="space-y-2">
+                {issues.map((issue, index) => (
+                  <div
+                    key={issue.key}
+                    className="grid grid-cols-[1.3fr_0.8fr_0.8fr] items-center rounded-xl border border-border/60 bg-background/70 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: issuePalette[index % issuePalette.length] }}
+                      />
+                      <span className="text-sm font-semibold text-foreground">{issue.label}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+                        {UTILITY_WEIGHTS.human[issue.key] ?? 1} pts
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
+                        {UTILITY_WEIGHTS.agent[issue.key] ?? 1} pts
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <NegotiationLayout
         left={
           <>
             <Card className="glass-panel">
@@ -349,59 +486,6 @@ export default function NegotiatePage() {
                 }}
               />
             </div>
-            <Card className="glass-panel lg:sticky lg:bottom-6">
-              <CardHeader>
-                <CardTitle className="text-base">Offer Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-muted-foreground">
-                {currentAgentOffer ? (
-                  <div className="rounded-xl border border-border/60 bg-background/70 px-3 py-2">
-                    {summarizeOffer(currentAgentOffer.allocation, issues)}
-                  </div>
-                ) : (
-                  <div>No agent offer yet.</div>
-                )}
-                {currentUtilities ? (
-                  <div className="grid gap-1 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span>Your weighted points (if accepted)</span>
-                      <span className="font-semibold text-foreground">{currentUtilities.human}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>Agent weighted points</span>
-                      <span className="font-semibold text-foreground">{currentUtilities.agent}</span>
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Weights shown below. No agreement = 0.
-                    </div>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-            <Card className="glass-panel">
-              <CardHeader>
-                <CardTitle className="text-base">Preference Weights</CardTitle>
-                <CardDescription>Higher weight = more important.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                {issues.map((issue) => (
-                  <div
-                    key={issue.key}
-                    className="flex items-center justify-between rounded-lg border border-border/60 bg-background/70 px-3 py-2"
-                  >
-                    <span className="font-semibold text-foreground">{issue.label}</span>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-primary">
-                        You {UTILITY_WEIGHTS.human[issue.key] ?? 1}
-                      </span>
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700">
-                        Agent {UTILITY_WEIGHTS.agent[issue.key] ?? 1}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
           </>
         }
         center={
@@ -514,27 +598,28 @@ export default function NegotiatePage() {
         }
         bottom={<OfferHistory offers={offers} issues={issues} />}
       />
-      <Separator className="my-8" />
-      <Card className="glass-panel">
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div>
-            <CardTitle className="text-base">Turn Support</CardTitle>
-            <CardDescription>Quick reminders for classroom pacing.</CardDescription>
-          </div>
-          <ClipboardList className="h-4 w-4 text-muted-foreground" />
-        </CardHeader>
-        <CardContent className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
-          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-            Offer builder prevents invalid allocations.
-          </div>
-          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-            Agent message arrives after each proposal.
-          </div>
-          <div className="rounded-lg border border-border/60 bg-background/70 p-3">
-            Negotiation ends automatically at deadline.
-          </div>
-        </CardContent>
-      </Card>
+        <Separator className="my-8" />
+        <Card className="glass-panel">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle className="text-base">Turn Support</CardTitle>
+              <CardDescription>Quick reminders for classroom pacing.</CardDescription>
+            </div>
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              Offer builder prevents invalid allocations.
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              Agent message arrives after each proposal.
+            </div>
+            <div className="rounded-lg border border-border/60 bg-background/70 p-3">
+              Negotiation ends automatically at deadline.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </LayoutShell>
   );
 }

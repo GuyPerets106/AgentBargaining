@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { Issue, Offer, OfferAllocation } from "@/lib/types";
+import type { ExperimentEvent, Issue, Offer, OfferAllocation } from "@/lib/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -122,6 +122,24 @@ export function summarizeHistory(offers: Offer[], maxItems = 4) {
       return `${offer.by} turn ${offer.turn}: ${Object.entries(offer.allocation)
         .map(([issue, allocation]) => `${issue} H${allocation.human}/A${allocation.agent}`)
         .join(", ")}`;
+    })
+    .join(" | ");
+}
+
+export function summarizeDecisions(events: ExperimentEvent[], maxItems = 6) {
+  const decisions = events.filter(
+    (event) => event.type === "offer_accept" || event.type === "offer_reject"
+  );
+  const slice = decisions.slice(-maxItems);
+  if (slice.length === 0) return "";
+  return slice
+    .map((event) => {
+      const payload = event.payload as { offer?: Offer; by?: string };
+      const turn = payload.offer?.turn;
+      const by = payload.by ? `by ${payload.by}` : "";
+      return event.type === "offer_accept"
+        ? `accepted ${by}${turn ? ` (turn ${turn})` : ""}`.trim()
+        : `rejected${turn ? ` (turn ${turn})` : ""}`;
     })
     .join(" | ");
 }

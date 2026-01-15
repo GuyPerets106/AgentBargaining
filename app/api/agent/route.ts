@@ -36,6 +36,7 @@ export async function POST(req: Request) {
       last_human_offer?: Offer;
       turn?: number;
       history_summary?: string;
+      decision_summary?: string;
       deadline_remaining?: number;
       chat_context?: Array<{ role: string; content: string }>;
     };
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
       issues,
       humanOffer: body.last_human_offer ?? null,
       historySummary: body.history_summary,
+      decisionSummary: body.decision_summary,
       chatContext: body.chat_context,
       deadlineRemaining: body.deadline_remaining,
       turn: body.turn,

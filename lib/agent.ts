@@ -166,6 +166,7 @@ export function buildGeminiOfferPrompt(params: {
   issues: Issue[];
   humanOffer?: Offer | null;
   historySummary?: string;
+  decisionSummary?: string;
   chatContext?: Array<{ role: string; content: string }>;
   deadlineRemaining?: number;
   turn?: number;
@@ -180,6 +181,15 @@ export function buildGeminiOfferPrompt(params: {
   const offerKeySummary = humanOffer
     ? summarizeOfferByKey(humanOffer, params.issues)
     : "none";
+  const history = params.historySummary ? `offer_history=${params.historySummary}` : "";
+  const chatContext = params.chatContext?.length
+    ? `chat: ${params.chatContext
+        .map((entry) => `${entry.role}:${entry.content}`)
+        .join(" | ")}`
+    : "";
+  const decisionSummary = params.decisionSummary
+    ? `decisions=${params.decisionSummary}`
+    : "";
 
   const prompt = [
     "Role: negotiation agent. Goal: maximize agent utility. No deal by deadline/turn limit = 0.",
@@ -187,6 +197,9 @@ export function buildGeminiOfferPrompt(params: {
     `issues{${issuesSummary}}`,
     weightsSummary,
     `last_human_offer{${offerKeySummary}}`,
+    history,
+    chatContext,
+    decisionSummary,
     deadline,
     turnInfo,
     "Decision: accept or counter.",
@@ -210,6 +223,7 @@ export function buildGeminiChatPrompt(params: {
   historySummary?: string;
   chatContext?: Array<{ role: string; content: string }>;
   latestUserMessage?: string;
+  decisionSummary?: string;
   deadlineRemaining?: number;
   turn?: number;
   maxTurns?: number;
@@ -221,6 +235,9 @@ export function buildGeminiChatPrompt(params: {
     ? `chat: ${params.chatContext
         .map((entry) => `${entry.role}:${entry.content}`)
         .join(" | ")}`
+    : "";
+  const decisionSummary = params.decisionSummary
+    ? `decisions=${params.decisionSummary}`
     : "";
   const deadline = params.deadlineRemaining ? `deadline=${params.deadlineRemaining}s` : "";
   const turnInfo =
@@ -241,6 +258,7 @@ export function buildGeminiChatPrompt(params: {
     params.latestUserMessage ? `latest_user_message=${params.latestUserMessage}` : "",
     history,
     chatContext,
+    decisionSummary,
     deadline,
     turnInfo,
     "Respond directly to the latest human message.",
