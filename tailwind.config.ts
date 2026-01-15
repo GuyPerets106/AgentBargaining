@@ -14,6 +14,7 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-sans)", "ui-sans-serif", "system-ui"],
         display: ["var(--font-display)", "ui-serif", "Georgia"],
+        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular"],
       },
       colors: {
         border: "hsl(var(--border))",

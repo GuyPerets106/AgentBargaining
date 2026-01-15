@@ -247,8 +247,7 @@ export default function NegotiatePage() {
 
     setAwaitingAgent(true);
     try {
-      const shouldGenerateOffer = !currentAgentOffer;
-      const response = await fetch(shouldGenerateOffer ? "/api/agent" : "/api/chat", {
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -261,6 +260,7 @@ export default function NegotiatePage() {
           history_summary: summarizeHistory(offers),
           deadline_remaining: deadlineRemaining,
           chat_context: [...chat, { role: "human", content: message }].slice(-4),
+          latest_user_message: message,
         }),
       });
 
@@ -272,39 +272,9 @@ export default function NegotiatePage() {
             : `Chat response failed: ${response.status}`;
         throw new Error(errorMessage);
       }
-      if (shouldGenerateOffer) {
-        const data = (await response.json()) as {
-          agent_message: string;
-          agent_offer?: Offer["allocation"];
-          decision?: "accept" | "counter";
-        };
-        if (data.decision === "accept") {
-          pushChat({ role: "agent", content: data.agent_message });
-          addEvent("chat_receive", { content: data.agent_message, source: "chat" });
-          if (lastHumanOffer) {
-            addEvent("offer_accept", { offer: lastHumanOffer, by: "agent" });
-            completeSession("agreement", lastHumanOffer);
-          }
-          return;
-        }
-        if (!data.agent_offer) {
-          throw new Error("Agent did not return a counteroffer.");
-        }
-        const agentOffer: Offer = {
-          turn: offers.length + 1,
-          by: "agent",
-          allocation: data.agent_offer,
-          created_at: nowIso(),
-        };
-        pushOffer(agentOffer);
-        addEvent("offer_receive", { offer: agentOffer, source: "chat" });
-        pushChat({ role: "agent", content: data.agent_message });
-        addEvent("chat_receive", { content: data.agent_message, source: "chat" });
-      } else {
-        const data = (await response.json()) as { agent_message: string };
-        pushChat({ role: "agent", content: data.agent_message });
-        addEvent("chat_receive", { content: data.agent_message, source: "chat" });
-      }
+      const data = (await response.json()) as { agent_message: string };
+      pushChat({ role: "agent", content: data.agent_message });
+      addEvent("chat_receive", { content: data.agent_message, source: "chat" });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       addEvent("error", { source: "chat", message });

@@ -209,6 +209,7 @@ export function buildGeminiChatPrompt(params: {
   humanOffer?: Offer | null;
   historySummary?: string;
   chatContext?: Array<{ role: string; content: string }>;
+  latestUserMessage?: string;
   deadlineRemaining?: number;
   turn?: number;
   maxTurns?: number;
@@ -237,10 +238,14 @@ export function buildGeminiChatPrompt(params: {
     params.humanOffer
       ? `last_human_offer=${summarizeOffer(params.humanOffer.allocation, params.issues)}`
       : "",
+    params.latestUserMessage ? `latest_user_message=${params.latestUserMessage}` : "",
     history,
     chatContext,
     deadline,
     turnInfo,
+    "Respond directly to the latest human message.",
+    "Do not output a full allocation or numeric offer.",
+    "You may mention which issues you value more and ask a clarifying question.",
     "Respond in 1-2 sentences (<=40 words). No JSON/tables.",
   ]
     .filter(Boolean)
@@ -308,7 +313,7 @@ export async function callGemini(
   }
 
   const controller = new AbortController();
-  const timeoutMs = options?.timeoutMs ?? 15000;
+  const timeoutMs = options?.timeoutMs ?? 60000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const temperature = options?.temperature ?? 0.4;
   const maxOutputTokens = options?.maxOutputTokens ?? 320000;

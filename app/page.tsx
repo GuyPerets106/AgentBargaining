@@ -1,39 +1,46 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 
 import LayoutShell from "@/components/LayoutShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { PERSONA_TAGS } from "@/lib/config";
 import { useSessionStore } from "@/store/useSessionStore";
 import type { ConditionId } from "@/lib/types";
 import { usePageView } from "@/hooks/usePageView";
+import { cn } from "@/lib/utils";
 
 export default function HomePage() {
   usePageView("/");
   const router = useRouter();
-  const { session, initSession, resetSession, updateParticipant } = useSessionStore();
-  const [condition, setCondition] = useState<ConditionId>("neutral");
-  const [personaTag, setPersonaTag] = useState<string>(PERSONA_TAGS[0]);
-  const [experimentCode, setExperimentCode] = useState("");
-
-  const hasActiveSession = useMemo(() => {
-    return session && !session.outcome.reason;
-  }, [session]);
+  const { initSession } = useSessionStore();
+  const [selectedPersona, setSelectedPersona] = useState<string>("neutral");
 
   const startSession = () => {
-    initSession(condition, condition === "persona" ? personaTag : undefined);
-    if (experimentCode.trim()) {
-      updateParticipant({ notes: `code:${experimentCode.trim()}` });
-    }
+    const condition: ConditionId = selectedPersona === "neutral" ? "neutral" : "persona";
+    initSession(condition, condition === "persona" ? selectedPersona : undefined);
     router.push("/consent");
   };
+
+  const personaOptions = [
+    {
+      id: "neutral",
+      label: "Neutral",
+      description: "Baseline agent tone for controlled comparisons.",
+    },
+    ...PERSONA_TAGS.map((tag) => ({
+      id: tag,
+      label: tag
+        .split("-")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" "),
+      description: `Persona: ${tag}`,
+    })),
+  ];
 
   return (
     <LayoutShell>
@@ -45,110 +52,50 @@ export default function HomePage() {
               Multi-issue negotiation experiment
             </Badge>
             <h1 className="text-4xl font-semibold text-foreground">
-              Run a fast, data-rich negotiation session in minutes.
+              Launch a negotiation session with the persona you want to test.
             </h1>
             <p className="text-base text-muted-foreground">
-              Collect consent, demographics, structured offers, chat exchanges, and survey data with a
-              streamlined, classroom-ready workflow.
+              Each participant starts a fresh session, so multiple people can negotiate in parallel
+              on different devices or browsers.
             </p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Card className="glass-panel">
-              <CardHeader>
-                <CardTitle className="text-base">Condition Control</CardTitle>
-                <CardDescription>Switch between neutral or persona framing.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Tabs value={condition} onValueChange={(value) => setCondition(value as ConditionId)}>
-                  <TabsList className="w-full">
-                    <TabsTrigger value="neutral" className="flex-1">
-                      Neutral
-                    </TabsTrigger>
-                    <TabsTrigger value="persona" className="flex-1">
-                      Persona
-                    </TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="neutral">
-                    <p className="text-sm text-muted-foreground">
-                      Templated, consistent language across all sessions.
-                    </p>
-                  </TabsContent>
-                  <TabsContent value="persona" className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      Gemini generates framing with the selected persona tag.
-                    </p>
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-muted-foreground">
-                        Persona tag
-                      </label>
-                      <select
-                        className="h-10 w-full rounded-lg border border-input bg-background/70 px-3 text-sm"
-                        value={personaTag}
-                        onChange={(event) => setPersonaTag(event.target.value)}
-                      >
-                        {PERSONA_TAGS.map((tag) => (
-                          <option key={tag} value={tag}>
-                            {tag}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-            <Card className="glass-panel">
-              <CardHeader>
-                <CardTitle className="text-base">Session Code</CardTitle>
-                <CardDescription>Optional classroom or cohort code.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Input
-                  placeholder="Enter code"
-                  value={experimentCode}
-                  onChange={(event) => setExperimentCode(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Stored anonymously to help organize datasets.
-                </p>
-              </CardContent>
-            </Card>
           </div>
         </div>
         <Card className="glass-panel h-fit">
           <CardHeader>
-            <CardTitle className="text-xl">Start the experiment</CardTitle>
-            <CardDescription>Ideal for 6-minute classroom demonstrations.</CardDescription>
+            <CardTitle className="text-xl">Choose agent persona</CardTitle>
+            <CardDescription>Select the tone before starting a new session.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {hasActiveSession ? (
-              <div className="rounded-xl border border-dashed border-border/60 bg-background/60 px-3 py-2 text-sm text-muted-foreground">
-                You have an active session in progress.
-              </div>
-            ) : null}
-            <Button className="w-full" size="lg" onClick={startSession}>
+          <CardContent className="space-y-3">
+            {personaOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setSelectedPersona(option.id)}
+                className={cn(
+                  "w-full rounded-2xl border px-4 py-3 text-left transition",
+                  "bg-background/70 hover:border-primary/60 hover:bg-white/80",
+                  selectedPersona === option.id
+                    ? "border-primary/70 bg-primary/10 shadow-soft"
+                    : "border-border/70"
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-foreground">{option.label}</span>
+                  <span
+                    className={cn(
+                      "text-[11px] font-semibold uppercase tracking-[0.18em]",
+                      selectedPersona === option.id ? "text-primary" : "text-muted-foreground"
+                    )}
+                  >
+                    {selectedPersona === option.id ? "Selected" : "Select"}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
+              </button>
+            ))}
+            <Button className="mt-4 w-full" size="lg" onClick={startSession}>
               Begin New Session
             </Button>
-            {hasActiveSession ? (
-              <Button
-                className="w-full"
-                variant="secondary"
-                onClick={() => router.push("/instructions")}
-              >
-                Resume Session
-              </Button>
-            ) : null}
-            {session ? (
-              <Button
-                className="w-full"
-                variant="ghost"
-                onClick={() => {
-                  resetSession();
-                }}
-              >
-                Clear Saved Session
-              </Button>
-            ) : null}
           </CardContent>
         </Card>
       </div>
