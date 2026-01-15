@@ -336,15 +336,15 @@ export default function NegotiatePage() {
             <CardContent className="space-y-4">
               {currentAgentOffer && offerTotals ? (
                 <>
-                  <div className="relative h-80 w-full">
+                  <div className="relative h-96 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
                           data={offerPieData}
                           dataKey="value"
                           nameKey="name"
-                          innerRadius={70}
-                          outerRadius={125}
+                          innerRadius={80}
+                          outerRadius={140}
                           paddingAngle={2}
                         >
                           <Cell fill="#0ea5e9" />

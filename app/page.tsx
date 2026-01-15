@@ -72,10 +72,10 @@ export default function HomePage() {
                 type="button"
                 onClick={() => setSelectedPersona(option.id)}
                 className={cn(
-                  "w-full rounded-2xl border px-4 py-3 text-left transition",
-                  "bg-background/70 hover:border-primary/60 hover:bg-white/80",
+                  "w-full rounded-2xl border-2 px-4 py-3 text-left transition-all",
+                  "bg-background/70 hover:border-primary/70 hover:bg-white/85",
                   selectedPersona === option.id
-                    ? "border-primary/70 bg-primary/10 shadow-soft"
+                    ? "border-primary bg-primary/10 shadow-soft ring-2 ring-primary/30"
                     : "border-border/70"
                 )}
               >
