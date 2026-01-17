@@ -173,12 +173,17 @@ export default function NegotiatePage() {
         agent_message: string;
         agent_offer?: Offer["allocation"];
         decision?: "accept" | "counter";
+        model?: string;
       };
 
       if (data.decision === "accept") {
         pushChat({ role: "agent", content: data.agent_message });
-        addEvent("chat_receive", { content: data.agent_message, turn: offer.turn });
-        addEvent("offer_accept", { offer, by: "agent" });
+        addEvent("chat_receive", {
+          content: data.agent_message,
+          turn: offer.turn,
+          model: data.model,
+        });
+        addEvent("offer_accept", { offer, by: "agent", model: data.model });
         completeSession("agreement", offer);
         return;
       }
@@ -195,9 +200,13 @@ export default function NegotiatePage() {
       };
 
       pushOffer(agentOffer);
-      addEvent("offer_receive", { offer: agentOffer });
+      addEvent("offer_receive", { offer: agentOffer, model: data.model });
       pushChat({ role: "agent", content: data.agent_message });
-      addEvent("chat_receive", { content: data.agent_message, turn: agentOffer.turn });
+      addEvent("chat_receive", {
+        content: data.agent_message,
+        turn: agentOffer.turn,
+        model: data.model,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       addEvent("error", { source: "agent", message });
@@ -257,9 +266,13 @@ export default function NegotiatePage() {
             : `Chat response failed: ${response.status}`;
         throw new Error(errorMessage);
       }
-      const data = (await response.json()) as { agent_message: string };
+      const data = (await response.json()) as { agent_message: string; model?: string };
       pushChat({ role: "agent", content: data.agent_message });
-      addEvent("chat_receive", { content: data.agent_message, source: "chat" });
+      addEvent("chat_receive", {
+        content: data.agent_message,
+        source: "chat",
+        model: data.model,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       addEvent("error", { source: "chat", message });

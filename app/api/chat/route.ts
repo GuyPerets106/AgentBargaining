@@ -65,17 +65,16 @@ export async function POST(req: Request) {
       turn: body.turn,
       maxTurns: DEFAULT_DOMAIN.max_turns,
     });
-    const agentMessage = (
-      await callGemini(system, prompt, {
-        temperature: 0.3,
-        maxOutputTokens: 320000,
-      })
-    ).trim();
-    if (!agentMessage) {
+    const { text: agentMessage, model } = await callGemini(system, prompt, {
+      temperature: 0.3,
+      maxOutputTokens: 320000,
+    });
+    const trimmed = agentMessage.trim();
+    if (!trimmed) {
       throw new Error("Gemini returned an empty response.");
     }
 
-    return NextResponse.json({ agent_message: agentMessage });
+    return NextResponse.json({ agent_message: trimmed, model });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },

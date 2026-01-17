@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       maxTurns: DEFAULT_DOMAIN.max_turns,
     });
 
-    const raw = await callGemini(system, prompt, {
+    const { text: raw, model } = await callGemini(system, prompt, {
       temperature: 0.3,
       maxOutputTokens: 700000,
       responseMimeType: "application/json",
@@ -81,6 +81,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         agent_message: parsed.message,
         decision: "accept",
+        model,
       });
     }
 
@@ -88,6 +89,7 @@ export async function POST(req: Request) {
       agent_message: parsed.message,
       agent_offer: parsed.offer,
       decision: "counter",
+      model,
     });
   } catch (error) {
     return NextResponse.json(

@@ -314,6 +314,57 @@ export function isLikelyTruncated(text: string) {
   return false;
 }
 
+type GeminiApiErrorDetails = {
+  status?: number;
+  code?: string;
+  body?: string;
+};
+
+class GeminiApiError extends Error {
+  status?: number;
+  code?: string;
+  body?: string;
+  constructor(message: string, details?: GeminiApiErrorDetails) {
+    super(message);
+    this.name = "GeminiApiError";
+    this.status = details?.status;
+    this.code = details?.code;
+    this.body = details?.body;
+  }
+}
+
+const DEFAULT_MODEL_SEQUENCE = [
+  "gemini-3-pro",
+  "gemini-3-flash",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+];
+
+function normalizeModelName(name: string) {
+  return name.replace(/^models\//, "");
+}
+
+function buildModelSequence(preferred?: string, fallback?: string[]) {
+  const base = (fallback && fallback.length ? fallback : DEFAULT_MODEL_SEQUENCE).map(normalizeModelName);
+  if (!preferred) return base;
+  const normalized = normalizeModelName(preferred);
+  return [normalized, ...base.filter((entry) => entry !== normalized)];
+}
+
+function shouldFallback(error: unknown) {
+  if (!(error instanceof GeminiApiError)) return false;
+  if (error.status && [429, 503, 502, 504].includes(error.status)) return true;
+  const body = `${error.message} ${error.body ?? ""} ${error.code ?? ""}`.toLowerCase();
+  return (
+    body.includes("resource_exhausted") ||
+    body.includes("quota") ||
+    body.includes("rate limit") ||
+    body.includes("unavailable") ||
+    body.includes("overloaded")
+  );
+}
+
 export async function callGemini(
   system: string,
   prompt: string,
@@ -323,6 +374,8 @@ export async function callGemini(
     timeoutMs?: number;
     failOnMaxTokens?: boolean;
     responseMimeType?: string;
+    model?: string;
+    fallbackModels?: string[];
   }
 ) {
   const apiKey = process.env.GOOGLE_AI_STUDIO_API_KEY;
@@ -330,56 +383,96 @@ export async function callGemini(
     throw new Error("Missing GOOGLE_AI_STUDIO_API_KEY (check .env.local)");
   }
 
-  const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? 60000;
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const temperature = options?.temperature ?? 0.4;
   const maxOutputTokens = options?.maxOutputTokens ?? 320000;
   const responseMimeType = options?.responseMimeType;
   const failOnMaxTokens = options?.failOnMaxTokens ?? true;
+  const modelSequence = buildModelSequence(options?.model, options?.fallbackModels);
 
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          systemInstruction: { parts: [{ text: system }] },
-          safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-          ],
-          generationConfig: {
-            temperature,
-            maxOutputTokens,
-            ...(responseMimeType ? { responseMimeType } : {}),
-          },
-        }),
+  let lastError: unknown = null;
+
+  for (const model of modelSequence) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            systemInstruction: { parts: [{ text: system }] },
+            safetySettings: [
+              { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+              { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+              { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+              { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+            ],
+            generationConfig: {
+              temperature,
+              maxOutputTokens,
+              ...(responseMimeType ? { responseMimeType } : {}),
+            },
+          }),
+        }
+      );
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let code: string | undefined;
+        let message = errorText;
+        try {
+          const parsed = JSON.parse(errorText);
+          code = parsed?.error?.status;
+          message = parsed?.error?.message ?? errorText;
+        } catch {
+          // keep raw text
+        }
+        const apiError = new GeminiApiError(
+          `Gemini API error (${response.status})`,
+          {
+            status: response.status,
+            code,
+            body: message,
+          }
+        );
+        if (shouldFallback(apiError)) {
+          lastError = apiError;
+          continue;
+        }
+        throw apiError;
       }
-    );
-    clearTimeout(timeout);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API error (${response.status}): ${errorText}`);
+      const data = await response.json();
+      const { text, finishReason } = extractGeminiResult(data);
+      if (finishReason === "MAX_TOKENS" && failOnMaxTokens) {
+        throw new GeminiApiError("Gemini response hit MAX_TOKENS limit.", {
+          status: response.status,
+        });
+      }
+      return { text, model };
+    } catch (error) {
+      clearTimeout(timeout);
+      if (error instanceof Error && error.name === "AbortError") {
+        lastError = error;
+        continue;
+      }
+      if (shouldFallback(error)) {
+        lastError = error;
+        continue;
+      }
+      throw error;
     }
-
-    const data = await response.json();
-    const { text, finishReason } = extractGeminiResult(data);
-    if (finishReason === "MAX_TOKENS" && failOnMaxTokens) {
-      throw new Error("Gemini response hit MAX_TOKENS limit.");
-    }
-    return text;
-  } catch (error) {
-    clearTimeout(timeout);
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`Gemini API request timed out after ${Math.round(timeoutMs / 1000)} seconds`);
-    }
-    throw error;
   }
+
+  if (lastError instanceof Error) {
+    throw new Error(
+      `Gemini API failed across fallback models. Last error: ${lastError.message}`
+    );
+  }
+  throw new Error("Gemini API failed across fallback models.");
 }

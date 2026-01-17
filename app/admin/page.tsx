@@ -24,15 +24,43 @@ type AdminSession = {
   duration_seconds: number;
 };
 
-type SummaryRow = {
-  condition_id: string;
+type SummaryMetrics = {
+  sessions?: number;
   agreement_rate: number | null;
   avg_joint_utility: number | null;
   avg_efficiency: number | null;
   avg_fairness_index: number | null;
+  avg_nash_product?: number | null;
   avg_nash_ratio: number | null;
+  avg_nash_distance?: number | null;
+  avg_pareto_distance?: number | null;
   pareto_efficiency_rate: number | null;
+  avg_human_share?: number | null;
+  avg_human_utility_ratio?: number | null;
+  avg_agent_utility_ratio?: number | null;
+  avg_ks_gap?: number | null;
+  avg_acceptor_ratio?: number | null;
+  avg_offer_nash_distance?: number | null;
+  avg_offer_pareto_distance?: number | null;
+  avg_duration?: number | null;
+  avg_turns?: number | null;
   avg_response: number | null;
+  avg_human_concession?: number | null;
+  avg_agent_concession?: number | null;
+  avg_burstiness?: number | null;
+  avg_cri?: number | null;
+};
+
+type SummaryRow = SummaryMetrics & {
+  condition_id: string;
+};
+
+type SummaryPersonaRow = SummaryMetrics & {
+  persona_tag: string;
+};
+
+type SummaryOverallRow = SummaryMetrics & {
+  label: string;
 };
 
 type PlotRow = {
@@ -56,6 +84,8 @@ type AnalyticsResponse = {
   generated_at: string;
   file_count: number;
   summary: SummaryRow[];
+  summary_personas: SummaryPersonaRow[];
+  summary_overall: SummaryOverallRow[];
   sessions: Array<Record<string, unknown>>;
   offers: Array<Record<string, unknown>>;
   chats: Array<Record<string, unknown>>;
@@ -75,6 +105,7 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState<AnalyticsResponse | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   const loadSessions = useCallback(async () => {
     setLoading(true);
@@ -178,46 +209,62 @@ export default function AdminPage() {
 
           <div className="space-y-10">
             <div className="space-y-4">
-              <div>
-                <div className="text-base font-semibold text-foreground">Legend</div>
-                <div className="text-sm text-muted-foreground">
-                  Definitions and expected direction for each metric.
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-base font-semibold text-foreground">Legend</div>
+                  <div className="text-sm text-muted-foreground">
+                    Definitions and expected direction for each metric.
+                  </div>
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setLegendOpen((prev) => !prev)}
+                  aria-expanded={legendOpen}
+                >
+                  {legendOpen ? "Hide legend" : "Show legend"}
+                </Button>
               </div>
-              {analytics?.legend?.length ? (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {analytics.legend.map((item) => {
-                    const direction =
-                      item.direction === "Higher is better"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : item.direction === "Lower is better"
-                          ? "bg-rose-100 text-rose-700"
-                          : "bg-amber-100 text-amber-700";
-                    return (
-                      <div
-                        key={item.metric}
-                        className="rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm font-semibold text-foreground">
-                            {item.metric}
+              {legendOpen ? (
+                analytics?.legend?.length ? (
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {analytics.legend.map((item) => {
+                      const direction =
+                        item.direction === "Higher is better"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : item.direction === "Lower is better"
+                            ? "bg-rose-100 text-rose-700"
+                            : "bg-amber-100 text-amber-700";
+                      return (
+                        <div
+                          key={item.metric}
+                          className="rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-semibold text-foreground">
+                              {item.metric}
+                            </div>
+                            <Badge className={direction}>{item.direction}</Badge>
                           </div>
-                          <Badge className={direction}>{item.direction}</Badge>
+                          <div className="mt-2 text-sm text-muted-foreground">
+                            {item.definition}
+                          </div>
+                          <div className="mt-2 text-xs text-muted-foreground">
+                            Range: {item.range}
+                          </div>
+                          <div className="mt-1 text-xs text-muted-foreground">{item.notes}</div>
                         </div>
-                        <div className="mt-2 text-sm text-muted-foreground">
-                          {item.definition}
-                        </div>
-                        <div className="mt-2 text-xs text-muted-foreground">
-                          Range: {item.range}
-                        </div>
-                        <div className="mt-1 text-xs text-muted-foreground">{item.notes}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                    No legend data available.
+                  </div>
+                )
               ) : (
-                <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-                  No legend data available.
+                <div className="rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-4 text-sm text-muted-foreground">
+                  Legend is collapsed. Click “Show legend” to view definitions.
                 </div>
               )}
             </div>
@@ -225,11 +272,16 @@ export default function AdminPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-base font-semibold text-foreground">Plots</div>
-                <div className="text-sm text-muted-foreground">
-                  Visual comparisons across conditions and concession dynamics.
-                </div>
+              <div className="text-sm text-muted-foreground">
+                Visual comparisons across conditions and concession dynamics.
               </div>
-              <AnalyticsCharts summary={analytics?.summary ?? []} plots={analytics?.plots ?? []} />
+            </div>
+              <AnalyticsCharts
+                summary={analytics?.summary ?? []}
+                summaryPersonas={analytics?.summary_personas ?? []}
+                summaryOverall={analytics?.summary_overall ?? []}
+                plots={analytics?.plots ?? []}
+              />
             </div>
 
             <DataTable
@@ -237,6 +289,22 @@ export default function AdminPage() {
               description="Aggregate outcomes by condition."
               rows={analytics?.summary ?? []}
               maxHeight="320px"
+              dense
+            />
+
+            <DataTable
+              title="Summary Metrics (Personas)"
+              description="Aggregate outcomes by persona tag."
+              rows={analytics?.summary_personas ?? []}
+              maxHeight="320px"
+              dense
+            />
+
+            <DataTable
+              title="Summary Metrics (Overall)"
+              description="Aggregate outcomes across all sessions."
+              rows={analytics?.summary_overall ?? []}
+              maxHeight="220px"
               dense
             />
 

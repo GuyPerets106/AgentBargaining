@@ -23,9 +23,12 @@ type AllocationPoint = {
 
 type AllocationStats = {
   allocations: AllocationPoint[];
+  frontier: AllocationPoint[];
   frontierSet: Set<string>;
   nash: { best: AllocationPoint | null; bestValue: number };
   maxJoint: number | null;
+  maxHuman: number | null;
+  maxAgent: number | null;
 };
 
 const weights = (weightsJson as Weights) ?? { human: {}, agent: {} };
@@ -100,6 +103,24 @@ function computeNashPoint(points: AllocationPoint[]) {
   return { best, bestValue };
 }
 
+function computeParetoDistance(
+  utilities: { human: number; agent: number },
+  frontier: AllocationPoint[]
+) {
+  if (!frontier.length) return null;
+  let min = Infinity;
+  frontier.forEach((point) => {
+    const distance = Math.sqrt(
+      (utilities.human - point.utilities.human) ** 2 +
+        (utilities.agent - point.utilities.agent) ** 2
+    );
+    if (distance < min) {
+      min = distance;
+    }
+  });
+  return Number.isFinite(min) ? min : null;
+}
+
 const allocationCache = new Map<string, AllocationStats>();
 
 function getAllocationStats(
@@ -115,6 +136,14 @@ function getAllocationStats(
     utilities: computeWeightedUtility(allocation, weightConfig),
   }));
   const frontier = computeParetoFrontier(allocations);
+  const maxHuman = allocations.reduce(
+    (max, point) => Math.max(max, point.utilities.human),
+    0
+  );
+  const maxAgent = allocations.reduce(
+    (max, point) => Math.max(max, point.utilities.agent),
+    0
+  );
   const frontierSet = new Set(
     frontier.map((point) => `${point.utilities.human}|${point.utilities.agent}`)
   );
@@ -127,7 +156,7 @@ function getAllocationStats(
           return sum + issue.total * Math.max(humanWeight, agentWeight);
         }, 0)
       : null;
-  const stats = { allocations, frontierSet, nash, maxJoint };
+  const stats = { allocations, frontier, frontierSet, nash, maxJoint, maxHuman, maxAgent };
   allocationCache.set(key, stats);
   return stats;
 }
@@ -254,6 +283,85 @@ function average(values: number[]) {
   return values.reduce((sum, val) => sum + val, 0) / values.length;
 }
 
+type MetricBucket = Record<string, number[]>;
+type MetricBuckets = {
+  agreement_rate: MetricBucket;
+  avg_joint_utility: MetricBucket;
+  avg_efficiency: MetricBucket;
+  avg_fairness_index: MetricBucket;
+  avg_nash_product: MetricBucket;
+  avg_nash_ratio: MetricBucket;
+  avg_nash_distance: MetricBucket;
+  avg_pareto_distance: MetricBucket;
+  pareto_efficiency_rate: MetricBucket;
+  avg_human_share: MetricBucket;
+  avg_human_utility_ratio: MetricBucket;
+  avg_agent_utility_ratio: MetricBucket;
+  avg_ks_gap: MetricBucket;
+  avg_acceptor_ratio: MetricBucket;
+  avg_offer_nash_distance: MetricBucket;
+  avg_offer_pareto_distance: MetricBucket;
+  avg_duration: MetricBucket;
+  avg_turns: MetricBucket;
+  avg_response: MetricBucket;
+  avg_human_concession: MetricBucket;
+  avg_agent_concession: MetricBucket;
+  avg_burstiness: MetricBucket;
+  avg_cri: MetricBucket;
+};
+
+function createMetricBuckets(): MetricBuckets {
+  return {
+    agreement_rate: {},
+    avg_joint_utility: {},
+    avg_efficiency: {},
+    avg_fairness_index: {},
+    avg_nash_product: {},
+    avg_nash_ratio: {},
+    avg_nash_distance: {},
+    avg_pareto_distance: {},
+    pareto_efficiency_rate: {},
+    avg_human_share: {},
+    avg_human_utility_ratio: {},
+    avg_agent_utility_ratio: {},
+    avg_ks_gap: {},
+    avg_acceptor_ratio: {},
+    avg_offer_nash_distance: {},
+    avg_offer_pareto_distance: {},
+    avg_duration: {},
+    avg_turns: {},
+    avg_response: {},
+    avg_human_concession: {},
+    avg_agent_concession: {},
+    avg_burstiness: {},
+    avg_cri: {},
+  };
+}
+
+function pushMetric(bucket: MetricBucket, key: string, value: number | null) {
+  if (value === null || value === undefined || Number.isNaN(value)) return;
+  bucket[key] = bucket[key] || [];
+  bucket[key].push(value);
+}
+
+function computeBurstiness(chats: Array<{ t: string }>) {
+  const times = chats
+    .map((chat) => Date.parse(chat.t))
+    .filter((time) => !Number.isNaN(time))
+    .sort((a, b) => a - b);
+  if (times.length < 2) return null;
+  const intervals = times.slice(1).map((time, idx) => (time - times[idx]) / 1000);
+  if (intervals.length === 0) return null;
+  const mean = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+  if (mean === 0) return null;
+  const variance =
+    intervals.reduce((sum, value) => sum + (value - mean) ** 2, 0) / intervals.length;
+  const std = Math.sqrt(variance);
+  const denom = std + mean;
+  if (denom === 0) return null;
+  return (std - mean) / denom;
+}
+
 export async function GET() {
   try {
     const dir = path.join(process.cwd(), "data");
@@ -285,20 +393,12 @@ export async function GET() {
     const concessionRows: Array<Record<string, unknown>> = [];
 
     const conditionCounts: Record<string, number> = {};
-    const agreementRates: Record<string, number[]> = {};
-    const jointUtilities: Record<string, number[]> = {};
-    const fairnessIndexes: Record<string, number[]> = {};
-    const efficiencies: Record<string, number[]> = {};
-    const nashProducts: Record<string, number[]> = {};
-    const nashRatios: Record<string, number[]> = {};
-    const nashDistances: Record<string, number[]> = {};
-    const paretoRates: Record<string, number[]> = {};
-    const humanShares: Record<string, number[]> = {};
-    const durations: Record<string, number[]> = {};
-    const turnCounts: Record<string, number[]> = {};
-    const responseLatencies: Record<string, number[]> = {};
-    const humanConcessions: Record<string, number[]> = {};
-    const agentConcessions: Record<string, number[]> = {};
+    const personaCounts: Record<string, number> = {};
+    const overallKey = "overall";
+    const overallCounts: Record<string, number> = { [overallKey]: 0 };
+    const conditionMetrics = createMetricBuckets();
+    const personaMetrics = createMetricBuckets();
+    const overallMetrics = createMetricBuckets();
     const concessionCurveMap = new Map<
       string,
       {
@@ -323,8 +423,18 @@ export async function GET() {
       const issues = session.config?.issues ?? [];
       const allocationStats = issues.length ? getAllocationStats(issues, weights) : null;
       const maxJoint = allocationStats?.maxJoint ?? computeMaxJointUtility(session, weights);
+      const personaKey =
+        personaTag || (conditionId === "neutral" ? "neutral" : "unspecified");
 
       conditionCounts[conditionId] = (conditionCounts[conditionId] ?? 0) + 1;
+      personaCounts[personaKey] = (personaCounts[personaKey] ?? 0) + 1;
+      overallCounts[overallKey] = (overallCounts[overallKey] ?? 0) + 1;
+
+      const pushAll = (metric: keyof MetricBuckets, value: number | null) => {
+        pushMetric(conditionMetrics[metric], conditionId, value);
+        pushMetric(personaMetrics[metric], personaKey, value);
+        pushMetric(overallMetrics[metric], overallKey, value);
+      };
 
       const agreement = outcome.reason === "agreement";
       const agreedAllocation = outcome.agreed_offer?.allocation ?? null;
@@ -332,6 +442,8 @@ export async function GET() {
         ? computeWeightedUtility(agreedAllocation, weights)
         : { human: null, agent: null, joint: null };
 
+      const maxHuman = allocationStats?.maxHuman ?? null;
+      const maxAgent = allocationStats?.maxAgent ?? null;
       const fairnessIndex =
         utilities.joint && utilities.human !== null && utilities.agent !== null
           ? 1 - Math.abs(utilities.human - utilities.agent) / utilities.joint
@@ -351,41 +463,62 @@ export async function GET() {
                 (utilities.agent - nashPoint.agent) ** 2
             )
           : null;
+      const paretoDistance =
+        allocationStats && utilities.human !== null && utilities.agent !== null
+          ? computeParetoDistance(
+              { human: utilities.human, agent: utilities.agent },
+              allocationStats.frontier
+            )
+          : null;
       const paretoEfficient =
         allocationStats && utilities.human !== null && utilities.agent !== null
           ? allocationStats.frontierSet.has(`${utilities.human}|${utilities.agent}`)
           : null;
       const humanShare =
         utilities.joint && utilities.human !== null ? utilities.human / utilities.joint : null;
+      const humanRatio =
+        utilities.human !== null && maxHuman ? utilities.human / maxHuman : null;
+      const agentRatio =
+        utilities.agent !== null && maxAgent ? utilities.agent / maxAgent : null;
+      const ksGap =
+        humanRatio !== null && agentRatio !== null
+          ? Math.abs(humanRatio - agentRatio)
+          : null;
 
-      agreementRates[conditionId] = agreementRates[conditionId] || [];
-      agreementRates[conditionId].push(agreement ? 1 : 0);
-      jointUtilities[conditionId] = jointUtilities[conditionId] || [];
-      if (utilities.joint !== null) jointUtilities[conditionId].push(utilities.joint);
-      fairnessIndexes[conditionId] = fairnessIndexes[conditionId] || [];
-      if (fairnessIndex !== null) fairnessIndexes[conditionId].push(fairnessIndex);
-      efficiencies[conditionId] = efficiencies[conditionId] || [];
-      if (efficiency !== null) efficiencies[conditionId].push(efficiency);
-      nashProducts[conditionId] = nashProducts[conditionId] || [];
-      if (nashProduct !== null) nashProducts[conditionId].push(nashProduct);
-      nashRatios[conditionId] = nashRatios[conditionId] || [];
-      if (nashRatio !== null) nashRatios[conditionId].push(nashRatio);
-      nashDistances[conditionId] = nashDistances[conditionId] || [];
-      if (nashDistance !== null) nashDistances[conditionId].push(nashDistance);
-      paretoRates[conditionId] = paretoRates[conditionId] || [];
-      if (paretoEfficient !== null) paretoRates[conditionId].push(paretoEfficient ? 1 : 0);
-      humanShares[conditionId] = humanShares[conditionId] || [];
-      if (humanShare !== null) humanShares[conditionId].push(humanShare);
-      durations[conditionId] = durations[conditionId] || [];
-      if (outcome.duration_seconds !== undefined) durations[conditionId].push(outcome.duration_seconds);
-      turnCounts[conditionId] = turnCounts[conditionId] || [];
-      if (outcome.turns !== undefined) turnCounts[conditionId].push(outcome.turns);
+      const acceptEvent = [...events].reverse().find((event) => event.type === "offer_accept");
+      const acceptBy = (acceptEvent?.payload as { by?: string } | undefined)?.by ?? "";
+      const acceptorRatio =
+        acceptBy === "human" ? humanRatio : acceptBy === "agent" ? agentRatio : null;
+
+      pushAll("agreement_rate", agreement ? 1 : 0);
+      pushAll("avg_joint_utility", utilities.joint ?? null);
+      pushAll("avg_efficiency", efficiency);
+      pushAll("avg_fairness_index", fairnessIndex);
+      pushAll("avg_nash_product", nashProduct);
+      pushAll("avg_nash_ratio", nashRatio);
+      pushAll("avg_nash_distance", nashDistance);
+      pushAll("avg_pareto_distance", paretoDistance);
+      pushAll(
+        "pareto_efficiency_rate",
+        paretoEfficient === null ? null : paretoEfficient ? 1 : 0
+      );
+      pushAll("avg_human_share", humanShare);
+      pushAll("avg_human_utility_ratio", humanRatio);
+      pushAll("avg_agent_utility_ratio", agentRatio);
+      pushAll("avg_ks_gap", ksGap);
+      pushAll("avg_acceptor_ratio", acceptorRatio);
+      pushAll(
+        "avg_duration",
+        typeof outcome.duration_seconds === "number" ? outcome.duration_seconds : null
+      );
+      pushAll("avg_turns", typeof outcome.turns === "number" ? outcome.turns : null);
 
       const latencies = computeOfferLatencies(offers);
-      responseLatencies[conditionId] = responseLatencies[conditionId] || [];
-      responseLatencies[conditionId].push(...latencies);
+      const avgResponse = average(latencies);
+      latencies.forEach((latency) => pushAll("avg_response", latency));
 
       const concessions = computeConcessions(offers, weights);
+      const concessionTotals = { human: 0, agent: 0 };
       concessions.forEach((row) => {
         const enriched = {
           session_id: session.session_id,
@@ -395,9 +528,14 @@ export async function GET() {
         };
         concessionRows.push(enriched);
         if (row.concession === null || typeof row.concession !== "number") return;
-        const bucket = row.by === "human" ? humanConcessions : agentConcessions;
-        bucket[conditionId] = bucket[conditionId] || [];
-        bucket[conditionId].push(row.concession);
+        const positiveConcession = row.concession > 0 ? row.concession : 0;
+        if (row.by === "human") {
+          pushAll("avg_human_concession", row.concession);
+          concessionTotals.human += positiveConcession;
+        } else if (row.by === "agent") {
+          pushAll("avg_agent_concession", row.concession);
+          concessionTotals.agent += positiveConcession;
+        }
         const key = `${conditionId}|${personaTag}|${row.by}|${row.turn}`;
         const entry =
           concessionCurveMap.get(key) || {
@@ -416,6 +554,16 @@ export async function GET() {
         entry.opponent_utilities.push(typeof row.opponent_utility === "number" ? row.opponent_utility : 0);
         concessionCurveMap.set(key, entry);
       });
+
+      const criDenominator = concessionTotals.human + concessionTotals.agent;
+      const cri =
+        criDenominator > 0
+          ? (concessionTotals.agent - concessionTotals.human) / criDenominator
+          : null;
+      pushAll("avg_cri", cri);
+
+      const burstiness = computeBurstiness(chats);
+      pushAll("avg_burstiness", burstiness);
 
       sessionRows.push({
         session_id: session.session_id,
@@ -437,17 +585,57 @@ export async function GET() {
         weighted_human_utility: utilities.human ?? "",
         weighted_agent_utility: utilities.agent ?? "",
         weighted_joint_utility: utilities.joint ?? "",
+        max_human_utility: maxHuman ?? "",
+        max_agent_utility: maxAgent ?? "",
+        human_utility_ratio: humanRatio ?? "",
+        agent_utility_ratio: agentRatio ?? "",
+        ks_gap: ksGap ?? "",
         fairness_index: fairnessIndex ?? "",
         efficiency: efficiency ?? "",
         max_joint_utility: maxJoint ?? "",
         nash_product: nashProduct ?? "",
         nash_ratio: nashRatio ?? "",
         nash_distance: nashDistance ?? "",
+        pareto_distance: paretoDistance ?? "",
         pareto_efficient:
           paretoEfficient === null ? "" : paretoEfficient ? "yes" : "no",
         human_share: humanShare ?? "",
+        acceptor: acceptBy,
+        acceptor_ratio: acceptorRatio ?? "",
+        avg_response: avgResponse ?? "",
+        burstiness: burstiness ?? "",
+        cri: cri ?? "",
         file: filename,
       });
+
+      if (allocationStats) {
+        const offerNashDistancesForSession: number[] = [];
+        const offerParetoDistancesForSession: number[] = [];
+        offers.forEach((offer) => {
+          const offerUtilities = computeWeightedUtility(offer.allocation, weights);
+          if (allocationStats.nash.best?.utilities) {
+            const distance = Math.sqrt(
+              (offerUtilities.human - allocationStats.nash.best.utilities.human) ** 2 +
+                (offerUtilities.agent - allocationStats.nash.best.utilities.agent) ** 2
+            );
+            offerNashDistancesForSession.push(distance);
+          }
+          const distanceToPareto = computeParetoDistance(
+            { human: offerUtilities.human, agent: offerUtilities.agent },
+            allocationStats.frontier
+          );
+          if (distanceToPareto !== null) {
+            offerParetoDistancesForSession.push(distanceToPareto);
+          }
+        });
+        const avgOfferNash = average(offerNashDistancesForSession);
+        const avgOfferPareto = average(offerParetoDistancesForSession);
+        pushAll("avg_offer_nash_distance", avgOfferNash);
+        pushAll("avg_offer_pareto_distance", avgOfferPareto);
+        const lastSessionRow = sessionRows[sessionRows.length - 1];
+        lastSessionRow.avg_offer_nash_distance = avgOfferNash ?? "";
+        lastSessionRow.avg_offer_pareto_distance = avgOfferPareto ?? "";
+      }
 
       offers.forEach((offer) => {
         const offerUtilities = computeWeightedUtility(offer.allocation, weights);
@@ -501,24 +689,56 @@ export async function GET() {
       ...Object.keys(conditionCounts).filter((key) => !conditionOrder.includes(key)),
     ];
 
+    const buildSummaryRow = (
+      key: string,
+      counts: Record<string, number>,
+      buckets: MetricBuckets
+    ) => ({
+      sessions: counts[key] ?? 0,
+      agreement_rate: average(buckets.agreement_rate[key] ?? []),
+      avg_joint_utility: average(buckets.avg_joint_utility[key] ?? []),
+      avg_efficiency: average(buckets.avg_efficiency[key] ?? []),
+      avg_fairness_index: average(buckets.avg_fairness_index[key] ?? []),
+      avg_nash_product: average(buckets.avg_nash_product[key] ?? []),
+      avg_nash_ratio: average(buckets.avg_nash_ratio[key] ?? []),
+      avg_nash_distance: average(buckets.avg_nash_distance[key] ?? []),
+      avg_pareto_distance: average(buckets.avg_pareto_distance[key] ?? []),
+      pareto_efficiency_rate: average(buckets.pareto_efficiency_rate[key] ?? []),
+      avg_human_share: average(buckets.avg_human_share[key] ?? []),
+      avg_human_utility_ratio: average(buckets.avg_human_utility_ratio[key] ?? []),
+      avg_agent_utility_ratio: average(buckets.avg_agent_utility_ratio[key] ?? []),
+      avg_ks_gap: average(buckets.avg_ks_gap[key] ?? []),
+      avg_acceptor_ratio: average(buckets.avg_acceptor_ratio[key] ?? []),
+      avg_offer_nash_distance: average(buckets.avg_offer_nash_distance[key] ?? []),
+      avg_offer_pareto_distance: average(buckets.avg_offer_pareto_distance[key] ?? []),
+      avg_duration: average(buckets.avg_duration[key] ?? []),
+      avg_turns: average(buckets.avg_turns[key] ?? []),
+      avg_response: average(buckets.avg_response[key] ?? []),
+      avg_human_concession: average(buckets.avg_human_concession[key] ?? []),
+      avg_agent_concession: average(buckets.avg_agent_concession[key] ?? []),
+      avg_burstiness: average(buckets.avg_burstiness[key] ?? []),
+      avg_cri: average(buckets.avg_cri[key] ?? []),
+    });
+
     const summaryRows = orderedConditions.map((conditionId) => ({
       condition_id: conditionId,
-      sessions: conditionCounts[conditionId],
-      agreement_rate: average(agreementRates[conditionId] ?? []),
-      avg_joint_utility: average(jointUtilities[conditionId] ?? []),
-      avg_efficiency: average(efficiencies[conditionId] ?? []),
-      avg_fairness_index: average(fairnessIndexes[conditionId] ?? []),
-      avg_nash_product: average(nashProducts[conditionId] ?? []),
-      avg_nash_ratio: average(nashRatios[conditionId] ?? []),
-      avg_nash_distance: average(nashDistances[conditionId] ?? []),
-      pareto_efficiency_rate: average(paretoRates[conditionId] ?? []),
-      avg_human_share: average(humanShares[conditionId] ?? []),
-      avg_duration: average(durations[conditionId] ?? []),
-      avg_turns: average(turnCounts[conditionId] ?? []),
-      avg_response: average(responseLatencies[conditionId] ?? []),
-      avg_human_concession: average(humanConcessions[conditionId] ?? []),
-      avg_agent_concession: average(agentConcessions[conditionId] ?? []),
+      ...buildSummaryRow(conditionId, conditionCounts, conditionMetrics),
     }));
+
+    const orderedPersonas = Object.keys(personaCounts).sort((a, b) => a.localeCompare(b));
+    const summaryPersonas = orderedPersonas.map((personaTag) => ({
+      persona_tag: personaTag,
+      ...buildSummaryRow(personaTag, personaCounts, personaMetrics),
+    }));
+
+    const summaryOverall = overallCounts[overallKey]
+      ? [
+          {
+            label: overallKey,
+            ...buildSummaryRow(overallKey, overallCounts, overallMetrics),
+          },
+        ]
+      : [];
 
     const concessionCurveRows = Array.from(concessionCurveMap.values()).map((entry) => ({
       condition_id: entry.condition_id,
@@ -563,6 +783,13 @@ export async function GET() {
         range: "0-1",
         direction: "Higher is better",
         notes: "1 = all sessions reached agreement.",
+      },
+      {
+        metric: "Sessions",
+        definition: "Total number of sessions in the group.",
+        range: ">= 0",
+        direction: "Context dependent",
+        notes: "Higher means more data for that segment.",
       },
       {
         metric: "Weighted Joint Utility",
@@ -621,11 +848,134 @@ export async function GET() {
         notes: "Higher = more for human; not always better.",
       },
       {
+        metric: "Human Utility Ratio",
+        definition: "Human utility / maximum feasible human utility.",
+        range: "0-1",
+        direction: "Higher is better",
+        notes: "1 = human reaches their utopia payoff.",
+      },
+      {
+        metric: "Agent Utility Ratio",
+        definition: "Agent utility / maximum feasible agent utility.",
+        range: "0-1",
+        direction: "Higher is better",
+        notes: "1 = agent reaches their utopia payoff.",
+      },
+      {
+        metric: "KS Gap",
+        definition: "Absolute gap between human and agent utility ratios.",
+        range: "0-1",
+        direction: "Lower is better",
+        notes: "0 = proportional (Kalai-Smorodinsky aligned).",
+      },
+      {
+        metric: "Pareto Distance",
+        definition: "Distance from agreement utility to Pareto frontier.",
+        range: ">= 0",
+        direction: "Lower is better",
+        notes: "0 = Pareto efficient.",
+      },
+      {
+        metric: "Acceptor Ratio",
+        definition: "Utility ratio for the accepting side.",
+        range: "0-1",
+        direction: "Higher is better",
+        notes: "Proxy for acceptance threshold.",
+      },
+      {
+        metric: "Avg Offer Nash Distance",
+        definition: "Average distance of offers to the Nash point.",
+        range: ">= 0",
+        direction: "Lower is better",
+        notes: "Lower = offers closer to Nash-optimal region.",
+      },
+      {
+        metric: "Avg Offer Pareto Distance",
+        definition: "Average distance of offers to the Pareto frontier.",
+        range: ">= 0",
+        direction: "Lower is better",
+        notes: "Lower = offers closer to efficiency frontier.",
+      },
+      {
+        metric: "Average Duration",
+        definition: "Average seconds from negotiation start to end.",
+        range: ">= 0",
+        direction: "Lower is better",
+        notes: "Shorter sessions may reflect faster convergence.",
+      },
+      {
+        metric: "Average Turns",
+        definition: "Average number of turns until end.",
+        range: ">= 0",
+        direction: "Lower is better",
+        notes: "Lower turns indicates faster agreement or termination.",
+      },
+      {
+        metric: "Average Human Concession",
+        definition: "Average drop in human utility between their offers.",
+        range: "Any",
+        direction: "Context dependent",
+        notes: "Higher = larger concessions per turn.",
+      },
+      {
+        metric: "Average Agent Concession",
+        definition: "Average drop in agent utility between their offers.",
+        range: "Any",
+        direction: "Context dependent",
+        notes: "Higher = larger concessions per turn.",
+      },
+      {
+        metric: "Concession Curve: Neutral Human",
+        definition:
+          "Average per-turn concession for humans in sessions where the agent uses neutral language.",
+        range: "Any",
+        direction: "Context dependent",
+        notes: "Tracks how humans conceded under neutral-agent wording.",
+      },
+      {
+        metric: "Concession Curve: Neutral Agent",
+        definition:
+          "Average per-turn concession for agents in sessions where the agent uses neutral language.",
+        range: "Any",
+        direction: "Context dependent",
+        notes: "Tracks agent concessions under neutral wording.",
+      },
+      {
+        metric: "Concession Curve: Persona Human",
+        definition:
+          "Average per-turn concession for humans in sessions where the agent uses a persona.",
+        range: "Any",
+        direction: "Context dependent",
+        notes: "Tracks how humans conceded under persona-agent wording.",
+      },
+      {
+        metric: "Concession Curve: Persona Agent",
+        definition:
+          "Average per-turn concession for agents in sessions where the agent uses a persona.",
+        range: "Any",
+        direction: "Context dependent",
+        notes: "Tracks agent concessions under persona wording.",
+      },
+      {
         metric: "Offer Response (s)",
         definition: "Time from human offer to agent response.",
         range: ">= 0",
         direction: "Lower is better",
         notes: "Proxy for system responsiveness.",
+      },
+      {
+        metric: "Burstiness",
+        definition: "Inter-message timing variability: (σ - μ)/(σ + μ).",
+        range: "-1 to 1",
+        direction: "Context dependent",
+        notes: "Higher = more bursty bursts of messaging.",
+      },
+      {
+        metric: "CRI (Concession Reciprocity Index)",
+        definition: "Relative concession balance: (agent - human) / (agent + human).",
+        range: "-1 to 1",
+        direction: "Context dependent",
+        notes: "IAGO-style reciprocity: positive = agent conceded more.",
       },
       {
         metric: "Concession",
@@ -648,6 +998,8 @@ export async function GET() {
       generated_at: new Date().toISOString(),
       file_count: files.length,
       summary: summaryRows,
+      summary_personas: summaryPersonas,
+      summary_overall: summaryOverall,
       sessions: sessionRows,
       offers: offerRows,
       chats: chatRows,
