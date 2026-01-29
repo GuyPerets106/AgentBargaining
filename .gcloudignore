@@ -1,0 +1,12 @@
+# Ignore files that should not be uploaded to Cloud Run source builds.
+.git
+.gitignore
+.env.local
+.env.*.local
+.next
+node_modules
+data
+reports
+*.log
+.DS_Store
+**/.DS_Store

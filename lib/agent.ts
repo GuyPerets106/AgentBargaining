@@ -39,6 +39,20 @@ type GeminiOfferDecision = {
   offer?: OfferAllocation;
 };
 
+function normalizeIssueToken(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function resolveIssueKey(rawKey: string, issues: Issue[]) {
+  const normalized = normalizeIssueToken(rawKey);
+  const match = issues.find((issue) => {
+    const keyToken = normalizeIssueToken(issue.key);
+    const labelToken = normalizeIssueToken(issue.label);
+    return keyToken === normalized || labelToken === normalized;
+  });
+  return match?.key;
+}
+
 function parseCompactOffer(text: string, issues: Issue[]) {
   const allocation: OfferAllocation = {};
   const normalized = text.replace(/\s+/g, "");
@@ -46,11 +60,18 @@ function parseCompactOffer(text: string, issues: Issue[]) {
   const seen = new Set<string>();
 
   for (const part of parts) {
-    const match = part.match(/^([a-zA-Z0-9_-]+)=H(\d+)\/A(\d+)$/);
+    const cleaned = part.replace(/[.;]+$/g, "").replace(/^["']|["']$/g, "");
+    const match = cleaned.match(/^([a-zA-Z0-9_-]+)[:=]H(\d+)[\/-]?A(\d+)$/i);
     if (!match) {
       throw new Error(`Invalid compact offer segment "${part}".`);
     }
-    const key = match[1];
+    const key = resolveIssueKey(match[1], issues);
+    if (!key) {
+      throw new Error(`Compact offer used unknown issue "${match[1]}".`);
+    }
+    if (seen.has(key)) {
+      throw new Error(`Compact offer repeated issue "${key}".`);
+    }
     const human = Number.parseInt(match[2], 10);
     const agent = Number.parseInt(match[3], 10);
     if (Number.isNaN(human) || Number.isNaN(agent)) {
@@ -73,6 +94,54 @@ function parseCompactOffer(text: string, issues: Issue[]) {
     }
   });
 
+  return allocation;
+}
+
+export function buildGeminiOfferRepairPrompt(params: {
+  personaTag?: string;
+  issues: Issue[];
+  humanOffer?: Offer | null;
+  historySummary?: string;
+  decisionSummary?: string;
+  chatContext?: Array<{ role: string; content: string }>;
+  deadlineRemaining?: number;
+  turn?: number;
+  maxTurns?: number;
+  errorMessage?: string;
+  rawResponse?: string;
+}) {
+  const base = buildGeminiOfferPrompt(params);
+  const issueKeys = params.issues.map((issue) => issue.key).join(", ");
+  const rawSnippet = params.rawResponse
+    ? `Previous_response=${params.rawResponse.slice(0, 300)}`
+    : "";
+  const prompt = [
+    base.prompt,
+    "Your previous output was invalid and could not be parsed.",
+    params.errorMessage ? `Parse_error=${params.errorMessage}` : "",
+    rawSnippet,
+    `Return JSON only with decision="counter" and an offer object using keys: ${issueKeys}.`,
+    "Do not use offer_compact. No extra text.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return { system: base.system, prompt };
+}
+
+export function buildFallbackOfferAllocation(issues: Issue[]) {
+  const allocation: OfferAllocation = {};
+  issues.forEach((issue) => {
+    const humanWeight = UTILITY_WEIGHTS.human[issue.key] ?? 1;
+    const agentWeight = UTILITY_WEIGHTS.agent[issue.key] ?? 1;
+    if (agentWeight > humanWeight) {
+      allocation[issue.key] = { human: 0, agent: issue.total };
+    } else if (humanWeight > agentWeight) {
+      allocation[issue.key] = { human: issue.total, agent: 0 };
+    } else {
+      const human = Math.floor(issue.total / 2);
+      allocation[issue.key] = { human, agent: issue.total - human };
+    }
+  });
   return allocation;
 }
 
@@ -99,9 +168,17 @@ function validateOfferAllocation(value: unknown, issues: Issue[]) {
     throw new Error("Gemini offer payload is missing or invalid.");
   }
   const raw = value as Record<string, { human?: number; agent?: number }>;
+  const normalizedKeyMap = new Map<string, string>();
+  Object.keys(raw).forEach((key) => {
+    normalizedKeyMap.set(normalizeIssueToken(key), key);
+  });
   const allocation: OfferAllocation = {};
   issues.forEach((issue) => {
-    const entry = raw[issue.key];
+    const normalizedIssueKey = normalizeIssueToken(issue.key);
+    const normalizedLabel = normalizeIssueToken(issue.label);
+    const fallbackKey =
+      normalizedKeyMap.get(normalizedIssueKey) ?? normalizedKeyMap.get(normalizedLabel);
+    const entry = raw[issue.key] ?? (fallbackKey ? raw[fallbackKey] : undefined);
     if (!entry) {
       throw new Error(`Offer missing allocation for issue "${issue.key}".`);
     }
@@ -110,15 +187,17 @@ function validateOfferAllocation(value: unknown, issues: Issue[]) {
     if (!Number.isInteger(human) || !Number.isInteger(agent)) {
       throw new Error(`Offer values for "${issue.key}" must be integers.`);
     }
-    if (human < 0 || agent < 0) {
+    const humanValue = Number(human);
+    const agentValue = Number(agent);
+    if (humanValue < 0 || agentValue < 0) {
       throw new Error(`Offer values for "${issue.key}" must be non-negative.`);
     }
-    if (human + agent !== issue.total) {
+    if (humanValue + agentValue !== issue.total) {
       throw new Error(
         `Offer values for "${issue.key}" must sum to ${issue.total}.`
       );
     }
-    allocation[issue.key] = { human, agent };
+    allocation[issue.key] = { human: humanValue, agent: agentValue };
   });
   return allocation;
 }
@@ -334,9 +413,7 @@ class GeminiApiError extends Error {
 }
 
 const DEFAULT_MODEL_SEQUENCE = [
-  "gemini-3-pro",
-  "gemini-3-flash",
-  "gemini-2.5-pro",
+  "gemini-3-flash-preview",
   "gemini-2.5-flash",
   "gemini-2.0-flash",
 ];
@@ -356,6 +433,13 @@ function shouldFallback(error: unknown) {
   if (!(error instanceof GeminiApiError)) return false;
   if (error.status && [429, 503, 502, 504].includes(error.status)) return true;
   const body = `${error.message} ${error.body ?? ""} ${error.code ?? ""}`.toLowerCase();
+  if (error.status === 404) {
+    return (
+      body.includes("not found for api version") ||
+      body.includes("not supported for generatecontent") ||
+      body.includes("not_found")
+    );
+  }
   return (
     body.includes("resource_exhausted") ||
     body.includes("quota") ||
@@ -449,10 +533,17 @@ export async function callGemini(
 
       const data = await response.json();
       const { text, finishReason } = extractGeminiResult(data);
-      if (finishReason === "MAX_TOKENS" && failOnMaxTokens) {
-        throw new GeminiApiError("Gemini response hit MAX_TOKENS limit.", {
+      if (!text.trim()) {
+        lastError = new GeminiApiError("Gemini returned an empty response.", {
           status: response.status,
         });
+        continue;
+      }
+      if (finishReason === "MAX_TOKENS" && failOnMaxTokens) {
+        lastError = new GeminiApiError("Gemini response hit MAX_TOKENS limit.", {
+          status: response.status,
+        });
+        continue;
       }
       return { text, model };
     } catch (error) {

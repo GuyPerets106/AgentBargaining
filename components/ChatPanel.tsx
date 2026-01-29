@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2, MessageCircle, Send } from "lucide-react";
+import { ChevronDown, Loader2, MessageCircle, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,11 +20,15 @@ export default function ChatPanel({
   onSend,
   disabled,
   isAwaiting,
+  onCollapse,
+  className,
 }: {
   messages: ChatMessage[];
   onSend: (message: string) => void;
   disabled?: boolean;
   isAwaiting?: boolean;
+  onCollapse?: () => void;
+  className?: string;
 }) {
   const [draft, setDraft] = useState("");
 
@@ -45,10 +49,24 @@ export default function ChatPanel({
   };
 
   return (
-    <Card className="glass-panel h-full">
+    <Card className={cn("glass-panel h-full", className)}>
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-4">
         <CardTitle className="text-base">Chat</CardTitle>
-        <MessageCircle className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-2">
+          {onCollapse ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={onCollapse}
+              aria-label="Collapse chat"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          ) : null}
+          <MessageCircle className="h-4 w-4 text-muted-foreground" />
+        </div>
       </CardHeader>
       <CardContent className="flex h-full flex-col gap-4">
         <div className="flex min-h-[280px] flex-1 flex-col gap-3 overflow-y-auto rounded-xl bg-white/60 p-3">

@@ -28,6 +28,9 @@ npm install
 GOOGLE_AI_STUDIO_API_KEY=YOUR_KEY_HERE
 ADMIN_USER=admin
 ADMIN_PASSWORD=admin
+# Optional: store sessions in Google Cloud Storage
+SESSION_BUCKET_NAME=negotiation-session-logs
+SESSION_BUCKET_PREFIX=sessions
 ```
 
 3) Run the dev server:
@@ -38,7 +41,8 @@ npm run dev
 Open http://localhost:3000
 
 ## Admin Logs
-- Logs are saved to `data/` on the machine running the server.
+- Logs are saved to `data/` on the machine running the server by default.
+- If `SESSION_BUCKET_NAME` is set, logs are stored in the GCS bucket instead.
 - Admin UI: http://localhost:3000/admin (Basic Auth).
 - Download JSON per session from the admin page.
 
@@ -137,7 +141,7 @@ Respond in 1-3 sentences. Do not output JSON or tables.
 
 ### Option C (hosted)
 - Use a host with persistent disk (Render, Fly, Railway with volume). 
-- If deploying to a serverless host, logs will **not** persist unless you switch `/api/submit` to a database.
+- If deploying to a serverless host, logs will **not** persist unless you switch `/api/submit` to a database (or GCS).
 
 ## Deployment Guide (Step-by-step)
 ### 1) Local + tunnel (fastest for a few hours)
@@ -163,6 +167,29 @@ Respond in 1-3 sentences. Do not output JSON or tables.
 1. Deploy to Vercel/Netlify.
 2. Replace `/api/submit` to save to a database (Supabase/Postgres/S3).
 3. Update `/admin` to read from the database.
+
+### 4) Google Cloud Run + GCS (recommended for this repo)
+1. Create a GCS bucket for session logs (e.g., `negotiation-session-logs`).
+2. Create a service account (e.g., `negotiation-app-sa`) and grant it `Storage Object Admin` on the bucket.
+3. Deploy to Cloud Run and attach the service account.
+4. Set environment variables in Cloud Run:
+   - `GOOGLE_AI_STUDIO_API_KEY`
+   - `ADMIN_USER`
+   - `ADMIN_PASSWORD`
+   - `SESSION_BUCKET_NAME=negotiation-session-logs`
+   - `SESSION_BUCKET_PREFIX=sessions` (optional)
+5. Verify:
+   - Play one session.
+   - Confirm a JSON file appears in the bucket under `sessions/`.
+   - Visit `/admin` to see sessions listed from GCS.
+
+Local testing with GCS:
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+export SESSION_BUCKET_NAME=negotiation-session-logs
+export SESSION_BUCKET_PREFIX=sessions
+npm run dev
+```
 
 ## Important Notes
 - `.env.local` is ignored by git so your API key is never committed.

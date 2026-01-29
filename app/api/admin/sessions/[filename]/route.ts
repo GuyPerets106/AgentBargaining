@@ -1,27 +1,13 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
-
-function safeFilename(input: string) {
-  const base = path.basename(input);
-  if (base !== input) return null;
-  if (!base.endsWith(".json")) return null;
-  if (base.includes("..")) return null;
-  return base;
-}
+import { readStoredSession } from "@/lib/server/sessionStore";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { filename: string } }
+  context: { params: Promise<{ filename: string }> }
 ) {
   try {
-    const filename = safeFilename(params.filename);
-    if (!filename) {
-      return NextResponse.json({ ok: false, error: "Invalid filename" }, { status: 400 });
-    }
-
-    const filePath = path.join(process.cwd(), "data", filename);
-    const raw = await fs.readFile(filePath, "utf8");
+    const { filename } = await context.params;
+    const { raw } = await readStoredSession(filename);
 
     return new NextResponse(raw, {
       status: 200,

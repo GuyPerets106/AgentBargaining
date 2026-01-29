@@ -21,8 +21,13 @@ export default function HomePage() {
   const [selectedPersona, setSelectedPersona] = useState<string>("neutral");
 
   const startSession = () => {
-    const condition: ConditionId = selectedPersona === "neutral" ? "neutral" : "persona";
-    initSession(condition, condition === "persona" ? selectedPersona : undefined);
+    const pool = ["neutral", ...PERSONA_TAGS];
+    const resolvedPersona =
+      selectedPersona === "random"
+        ? pool[Math.floor(Math.random() * pool.length)]
+        : selectedPersona;
+    const condition: ConditionId = resolvedPersona === "neutral" ? "neutral" : "persona";
+    initSession(condition, condition === "persona" ? resolvedPersona : undefined);
     router.push("/consent");
   };
 
@@ -31,6 +36,11 @@ export default function HomePage() {
       id: "neutral",
       label: "Neutral",
       description: "Baseline agent tone for controlled comparisons.",
+    },
+    {
+      id: "random",
+      label: "Random",
+      description: "Surprise me with a randomly selected agent persona.",
     },
     ...PERSONA_TAGS.map((tag) => ({
       id: tag,
@@ -43,7 +53,7 @@ export default function HomePage() {
   ];
 
   return (
-    <LayoutShell>
+    <LayoutShell className="max-w-6xl lg:w-[70%]">
       <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
           <div className="space-y-4">

@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
-
 import weightsJson from "@/lib/weights.json";
 import type { ExperimentEvent, ExperimentSession, Offer, OfferAllocation } from "@/lib/types";
+import { listStoredSessions } from "@/lib/server/sessionStore";
 
 export const dynamic = "force-dynamic";
 
@@ -178,7 +176,7 @@ function collectOffers(events: ExperimentEvent[]) {
         t: event.t,
       };
     })
-    .filter((offer): offer is Offer & { t?: string } => Boolean(offer));
+    .filter((offer): offer is Offer & { t: string } => Boolean(offer));
 }
 
 function collectChats(events: ExperimentEvent[]) {
@@ -364,27 +362,7 @@ function computeBurstiness(chats: Array<{ t: string }>) {
 
 export async function GET() {
   try {
-    const dir = path.join(process.cwd(), "data");
-    let entries: Array<import("fs").Dirent> = [];
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        throw error;
-      }
-    }
-    const files = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-      .map((entry) => entry.name);
-
-    const sessions = await Promise.all(
-      files.map(async (filename) => {
-        const filePath = path.join(dir, filename);
-        const [raw, stats] = await Promise.all([fs.readFile(filePath, "utf8"), fs.stat(filePath)]);
-        const data = JSON.parse(raw) as ExperimentSession;
-        return { filename, stored_at: stats.mtime.toISOString(), session: data };
-      })
-    );
+    const sessions = await listStoredSessions();
 
     const sessionRows: Array<Record<string, unknown>> = [];
     const offerRows: Array<Record<string, unknown>> = [];
@@ -996,7 +974,7 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       generated_at: new Date().toISOString(),
-      file_count: files.length,
+      file_count: sessions.length,
       summary: summaryRows,
       summary_personas: summaryPersonas,
       summary_overall: summaryOverall,

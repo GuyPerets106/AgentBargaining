@@ -4,6 +4,8 @@ import { DEFAULT_DOMAIN } from "@/lib/config";
 import type { Offer } from "@/lib/types";
 import {
   buildGeminiOfferPrompt,
+  buildGeminiOfferRepairPrompt,
+  buildFallbackOfferAllocation,
   callGemini,
   parseGeminiOfferResponse,
 } from "@/lib/agent";
@@ -29,7 +31,7 @@ function checkRateLimit(sessionId: string) {
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as {
+    let body: {
       session_id?: string;
       condition_id?: "neutral" | "persona";
       persona_tag?: string;
@@ -40,6 +42,11 @@ export async function POST(req: Request) {
       deadline_remaining?: number;
       chat_context?: Array<{ role: string; content: string }>;
     };
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
     const sessionId = body.session_id ?? "";
     if (!sessionId) {
@@ -52,6 +59,18 @@ export async function POST(req: Request) {
 
     const issues = DEFAULT_DOMAIN.issues;
     const personaTag = body.condition_id === "persona" ? body.persona_tag : "neutral";
+    const fallbackResponse = (reason?: string) => {
+      if (reason) {
+        console.warn(`[agent] using fallback offer: ${reason}`);
+      }
+      const fallbackOffer = buildFallbackOfferAllocation(issues);
+      return NextResponse.json({
+        agent_message: "Counteroffer based on priorities.",
+        agent_offer: fallbackOffer,
+        decision: "counter",
+        model: "local-fallback",
+      });
+    };
     const { system, prompt } = buildGeminiOfferPrompt({
       personaTag,
       issues,
@@ -64,24 +83,59 @@ export async function POST(req: Request) {
       maxTurns: DEFAULT_DOMAIN.max_turns,
     });
 
-    const { text: raw, model } = await callGemini(system, prompt, {
-      temperature: 0.3,
-      maxOutputTokens: 700000,
-      responseMimeType: "application/json",
-    });
-    const parsed = parseGeminiOfferResponse(raw, issues);
+    let raw = "";
+    let model = "unknown";
+    try {
+      const result = await callGemini(system, prompt, {
+        temperature: 0.3,
+        maxOutputTokens: 700000,
+        responseMimeType: "application/json",
+      });
+      raw = result.text;
+      model = result.model;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Gemini error";
+      return fallbackResponse(message);
+    }
+    let parsed;
+    let parsedModel = model;
+    try {
+      parsed = parseGeminiOfferResponse(raw, issues);
+    } catch (error) {
+      const repair = buildGeminiOfferRepairPrompt({
+        personaTag,
+        issues,
+        humanOffer: body.last_human_offer ?? null,
+        historySummary: body.history_summary,
+        decisionSummary: body.decision_summary,
+        chatContext: body.chat_context,
+        deadlineRemaining: body.deadline_remaining,
+        turn: body.turn,
+        maxTurns: DEFAULT_DOMAIN.max_turns,
+        errorMessage: error instanceof Error ? error.message : "Unknown parse error",
+        rawResponse: raw,
+      });
+      try {
+        const repairResult = await callGemini(repair.system, repair.prompt, {
+          temperature: 0.2,
+          maxOutputTokens: 700000,
+          responseMimeType: "application/json",
+        });
+        parsedModel = repairResult.model;
+        parsed = parseGeminiOfferResponse(repairResult.text, issues);
+      } catch {
+        return fallbackResponse("Repair attempt failed");
+      }
+    }
 
     if (parsed.decision === "accept") {
       if (!body.last_human_offer) {
-        return NextResponse.json(
-          { error: "Agent accepted but no human offer was provided." },
-          { status: 400 }
-        );
+        return fallbackResponse("Accept without human offer");
       }
       return NextResponse.json({
         agent_message: parsed.message,
         decision: "accept",
-        model,
+        model: parsedModel,
       });
     }
 
@@ -89,12 +143,11 @@ export async function POST(req: Request) {
       agent_message: parsed.message,
       agent_offer: parsed.offer,
       decision: "counter",
-      model,
+      model: parsedModel,
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[agent] unexpected error: ${message}`);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
